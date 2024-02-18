@@ -25,9 +25,6 @@
 #include <sstream>
 #include <limits>
 #include <algorithm>
-#include <glslang/Include/ShHandle.h>
-#include <glslang/Public/ShaderLang.h>
-#include <glslang/SPIRV/GlslangToSpv.h>
 
 #define KGFX_IMPL_VER KGFX_MAKE_VERSION(1, 0, 0)
 #define KGFX_VK_TARGET_FRAMES 2
@@ -445,7 +442,6 @@ void Vulkan::destroy() {
 	vkDestroyFence(device, inFlightFence, nullptr);
 	vkDestroyCommandPool(device, commandPool, nullptr);
 	for (KGFXrenderpass& renderPass : renderPasses) {
-		delete[] renderPass->renderingInfo.pColorAttachments;
 		delete renderPass;
 	}
 	for (u32 i = 0; i < swapchainImageCount; ++i) {
@@ -496,6 +492,13 @@ void Vulkan::render(KGFXpipeline pipeline) {
 
 	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
 	
+	VkRenderingAttachmentInfo renderingAttachmentInfo = {};
+	renderingAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	renderingAttachmentInfo.imageView = swapchainImageViews[imageIndex];
+	renderingAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	pipeline->renderPass->renderingInfo.colorAttachmentCount = 1;
+	pipeline->renderPass->renderingInfo.pColorAttachments = &renderingAttachmentInfo;
 	vkCmdBeginRendering(commandBuffer, &pipeline->renderPass->renderingInfo);
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
@@ -816,20 +819,6 @@ VkResult Vulkan::createSwapchain() {
 }
 
 KGFXrenderpass Vulkan::createRenderPass() {
-	VkRenderingAttachmentInfo* renderingAttachmentInfos = new VkRenderingAttachmentInfo[swapchainImageCount];
-	for (u32 i = 0; i < swapchainImageCount; ++i) {
-		renderingAttachmentInfos[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-		renderingAttachmentInfos[i].pNext = nullptr;
-		renderingAttachmentInfos[i].imageView = swapchainImageViews[i];
-		renderingAttachmentInfos[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		renderingAttachmentInfos[i].resolveMode = VK_RESOLVE_MODE_NONE_KHR;
-		renderingAttachmentInfos[i].resolveImageView = VK_NULL_HANDLE;
-		renderingAttachmentInfos[i].resolveImageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		renderingAttachmentInfos[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		renderingAttachmentInfos[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		renderingAttachmentInfos[i].clearValue = { 0.0f, 0.0f, 0.0f, 1.0f };
-	}
-
 	KGFXrenderpass renderPass = new KGFXrenderpass_t;
 	renderPass->renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
 	renderPass->renderingInfo.pNext = nullptr;
@@ -837,8 +826,8 @@ KGFXrenderpass Vulkan::createRenderPass() {
 	renderPass->renderingInfo.renderArea = { { 0, 0 }, extent };
 	renderPass->renderingInfo.layerCount = 1;
 	renderPass->renderingInfo.viewMask = 0;
-	renderPass->renderingInfo.colorAttachmentCount = swapchainImageCount;
-	renderPass->renderingInfo.pColorAttachments = renderingAttachmentInfos;
+	renderPass->renderingInfo.colorAttachmentCount = 0;
+	renderPass->renderingInfo.pColorAttachments = nullptr;
 	renderPass->renderingInfo.pDepthAttachment = nullptr;
 	renderPass->renderingInfo.pStencilAttachment = nullptr;
 	renderPasses.push_back(renderPass);
@@ -1039,14 +1028,12 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 	pipelineColorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 	pipelineColorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-	std::vector<VkPipelineColorBlendAttachmentState> pipelineColorBlendAttachmentStates(swapchainImageCount, pipelineColorBlendAttachmentState);
-
 	VkPipelineColorBlendStateCreateInfo pipelineColorBlendStateCreateInfo = {};
 	pipelineColorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	pipelineColorBlendStateCreateInfo.logicOpEnable = VK_FALSE;
 	pipelineColorBlendStateCreateInfo.logicOp = VK_LOGIC_OP_COPY;
-	pipelineColorBlendStateCreateInfo.attachmentCount = swapchainImageCount;
-	pipelineColorBlendStateCreateInfo.pAttachments = pipelineColorBlendAttachmentStates.data();
+	pipelineColorBlendStateCreateInfo.attachmentCount = 1;
+	pipelineColorBlendStateCreateInfo.pAttachments = &pipelineColorBlendAttachmentState;
 	pipelineColorBlendStateCreateInfo.blendConstants[0] = 0.0f;
 	pipelineColorBlendStateCreateInfo.blendConstants[1] = 0.0f;
 	pipelineColorBlendStateCreateInfo.blendConstants[2] = 0.0f;
@@ -1061,12 +1048,8 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 
 	VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo = {};
 	pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
-	pipelineRenderingCreateInfo.colorAttachmentCount = swapchainImageCount;
-	std::vector<VkFormat> formats(swapchainImageCount);
-	for (u32 i = 0; i < swapchainImageCount; ++i) {
-		formats[i] = swapchainFormat.format;
-	}
-	pipelineRenderingCreateInfo.pColorAttachmentFormats = formats.data();
+	pipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchainFormat.format;
 	pipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_UNDEFINED;
 	pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 	pipelineRenderingCreateInfo.viewMask = 0;
