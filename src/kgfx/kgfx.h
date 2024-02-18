@@ -107,24 +107,21 @@ KGFX_DEFINE_HANDLE(KGFXshader);
 #include <Windows.h>
 
 typedef struct {
-	HWND hwnd;
+	void* hwnd;
 } KGFXwindowWIN;
 
 typedef KGFXwindowWIN KGFXwindow;
 #elif KGFX_LINUX
-#include <X11/Xlib.h>
-
 typedef struct {
-	Display* display;
-	Window window;
+	void* display;
+	unsigned long window;
 } KGFXwindowXlib;
 
 typedef KGFXwindowXlib KGFXwindow;
 #elif KGFX_MACOS
-#include <Cocoa/Cocoa.h>
-
 typedef struct {
-	NSWindow* window;
+	void* window;
+	void* contentView;
 } KGFXwindowCocoa;
 
 typedef KGFXwindowCocoa KGFXwindow;

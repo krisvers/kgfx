@@ -6,6 +6,8 @@
 #define KGFX_DEBUG
 #endif
 
+// #define KGFX_VALIDATION
+
 #ifdef KGFX_WINDOWS
 #define VK_USE_PLATFORM_WIN32_KHR
 #define SURFACE_EXTENSION_NAME VK_KHR_WIN32_SURFACE_EXTENSION_NAME
@@ -312,8 +314,54 @@ VkResult Vulkan::init() {
 	};
 
 	std::vector<const char*> layers = {
+		#ifdef KGFX_VALIDATION
 		"VK_LAYER_KHRONOS_validation",
+		#endif
 	};
+
+	u32 availableExtensionCount;
+	vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionCount, nullptr);
+
+	std::vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
+	vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionCount, availableExtensions.data());
+
+	for (u32 i = 0; i < extensions.size(); ++i) {
+		const char*& ext = extensions[i];
+		bool found = false;
+		for (VkExtensionProperties& avail : availableExtensions) {
+			if (strcmp(avail.extensionName, ext) != 0) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			DEBUG_OUTF("Extension {} not found, removing from requested extensions", ext);
+			extensions.erase(extensions.begin() + i);
+		}
+	}
+
+	u32 availablelayerCount;
+	vkEnumerateInstanceLayerProperties(&availablelayerCount, nullptr);
+
+	std::vector<VkLayerProperties> availablelayers(availablelayerCount);
+	vkEnumerateInstanceLayerProperties(&availablelayerCount, availablelayers.data());
+
+	for (u32 i = 0; i < layers.size(); ++i) {
+		const char*& ext = layers[i];
+		bool found = false;
+		for (VkLayerProperties& avail : availablelayers) {
+			if (strcmp(avail.layerName, ext) != 0) {
+				found = true;
+				break;
+			}
+		}
+
+		if (!found) {
+			DEBUG_OUTF("Layer {} not found, removing from requested layers", ext);
+			layers.erase(layers.begin() + i);
+		}
+	}
 
 	VkInstanceCreateInfo createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
