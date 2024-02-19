@@ -94,11 +94,23 @@ struct Vulkan {
 	VkResult createCommandUtilities();
 	VkResult createSyncUtilities();
 
+	KGFXbuffer createBuffer(KGFXbufferdesc bufferDesc);
+	KGFXresult uploadBuffer(KGFXbuffer buffer, u32 size, void* data);
+
+	KGFXmesh createMesh(KGFXmeshdesc meshDesc);
+
 	KGFXshader createShader(const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium);
 	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
 
+	KGFXpipelinemesh pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
+	void pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh);
+
 	void destroyShader(KGFXshader shader);
 	void destroyPipeline(KGFXpipeline pipeline);
+	void destroyBuffer(KGFXbuffer buffer);
+	void destroyMesh(KGFXmesh mesh);
+
+	u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 };
 
 struct KGFXcontext_t {
@@ -122,10 +134,32 @@ struct KGFXpipeline_t {
 	VkDescriptorSetLayout descriptorSetLayout;
 	VkDescriptorPool descriptorPool;
 	VkDescriptorSet descriptorSet;
+
+	u32 vertexStride;
+	std::vector<KGFXpipelinemesh> meshes;
 };
 
 struct KGFXrenderpass_t {
 	VkRenderingInfo renderingInfo;
+};
+
+struct KGFXbuffer_t {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	VkDeviceSize size;
+};
+
+struct KGFXmesh_t {
+	KGFXbuffer vertexBuffer;
+	u32 vertexOffset;
+	KGFXbuffer indexBuffer;
+	u32 indexOffset;
+};
+
+struct KGFXpipelinemesh_t {
+	u32 id;
+	u32 binding;
+	KGFXmesh mesh;
 };
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format);
@@ -207,6 +241,27 @@ constexpr VkFormat datatypeVkFormat(KGFXdatatype datatype) {
 	}
 }
 
+constexpr VkBufferUsageFlags bufferUsageVkFlags(KGFXbufferusageflags usage) {
+	VkBufferUsageFlags flags = 0;
+	if (usage & KGFX_BUFFER_USAGE_VERTEX_BUFFER) {
+		flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	}
+
+	if (usage & KGFX_BUFFER_USAGE_INDEX_BUFFER) {
+		flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+	}
+
+	if (usage & KGFX_BUFFER_USAGE_UNIFORM_BUFFER) {
+		flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	}
+
+	if (usage & KGFX_BUFFER_USAGE_STORAGE_BUFFER) {
+		flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	}
+
+	return flags;
+}
+
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
 	if (context == nullptr) {
 		DEBUG_OUT("Invalid KGFXcontext out pointer");
@@ -273,6 +328,11 @@ KGFXshader kgfxCreateShader(KGFXcontext ctx, const void* data, u32 size, KGFXsha
 }
 
 void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
 	if (shader == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXshader");
 		return;
@@ -291,12 +351,110 @@ KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc) 
 }
 
 void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
 	if (pipeline == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXpipeline");
 		return;
 	}
 
 	ctx->vulkan.destroyPipeline(pipeline);
+}
+
+KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (mesh == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXmesh");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.pipelineAddMesh(pipeline, mesh, binding);
+}
+
+void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (pipelineMesh == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipelinemesh");
+		return;
+	}
+
+	ctx->vulkan.pipelineRemoveMesh(pipeline, pipelineMesh);
+}
+
+KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.createBuffer(bufferDesc);
+}
+
+KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* data) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_INVALID_CONTEXT;
+	}
+
+	return ctx->vulkan.uploadBuffer(buffer, size, data);
+}
+
+void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return;
+	}
+
+	ctx->vulkan.destroyBuffer(buffer);
+}
+
+KGFXmesh kgfxCreateMesh(KGFXcontext ctx, KGFXmeshdesc meshDesc) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.createMesh(meshDesc);
+}
+
+void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (mesh == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXmesh");
+		return;
+	}
+
+	ctx->vulkan.destroyMesh(mesh);
 }
 
 VkResult Vulkan::init() {
@@ -553,7 +711,24 @@ void Vulkan::render(KGFXpipeline pipeline) {
 	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+	VkDeviceSize offset = 0;
+	for (KGFXpipelinemesh& pipelineMesh : pipeline->meshes) {
+		if (pipelineMesh->mesh->vertexBuffer != KGFX_HANDLE_NULL) {
+			offset = pipelineMesh->mesh->vertexOffset;
+			vkCmdBindVertexBuffers(commandBuffer, pipelineMesh->binding, 1, &pipelineMesh->mesh->vertexBuffer->buffer, &offset);
+		}
+		if (pipelineMesh->mesh->indexBuffer != KGFX_HANDLE_NULL) {
+			offset = pipelineMesh->mesh->indexOffset;
+			vkCmdBindIndexBuffer(commandBuffer, pipelineMesh->mesh->indexBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffer, pipelineMesh->mesh->indexBuffer->size / sizeof(u32), 1, 0, pipelineMesh->mesh->vertexOffset, 0);
+		} else {
+			if (pipelineMesh->mesh->vertexBuffer == KGFX_HANDLE_NULL) {
+				DEBUG_OUT("[warning]: No vertex or index buffer provided for pipeline mesh");
+				continue;
+			}
+			vkCmdDraw(commandBuffer, pipelineMesh->mesh->vertexBuffer->size / pipeline->vertexStride, 1, pipelineMesh->mesh->vertexOffset, 0);
+		}
+	}
 
 	vkCmdEndRendering(commandBuffer);
 
@@ -616,20 +791,20 @@ VkResult Vulkan::createSurface(std::function<u32(const VkSurfaceFormatKHR* forma
 	VkWin32SurfaceCreateInfoKHR createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
 	createInfo.hinstance = GetModuleHandle(nullptr);
-	createInfo.hwnd = ctx->window.hwnd;
+	createInfo.hwnd = reinterpret_cast<HWND>(ctx->window.hwnd);
 
 	res = vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface);
 #elif KGFX_LINUX
 	VkXlibSurfaceCreateInfoKHR createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-	createInfo.dpy = ctx->window.display;
-	createInfo.window = ctx->window.window;
+	createInfo.dpy = reinterpret_cast<Display*>(ctx->window.display);
+	createInfo.window = reinterpret_cast<Window>(ctx->window.window);
 
 	res = vkCreateXlibSurfaceKHR(instance, &createInfo, nullptr, &surface);
 #elif KGFX_MACOS
 	VkMacOSSurfaceCreateInfoMVK createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
-	createInfo.pView = ctx->window.contentView;
+	createInfo.pView = reinterpret_cast<CAMetalLayer*>(ctx->window.contentView);
 
 	res = vkCreateMacOSSurfaceMVK(instance, &createInfo, nullptr, &surface);
 #endif
@@ -1000,6 +1175,8 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 				vertexAttributeCount += pipelineDesc.layout.pBindings[i].attributeCount;
 				kgfxVertexBindings.push_back(pipelineDesc.layout.pBindings[i]);
 				++vertexBindCount;
+
+				pipeline->vertexStride = vertexInputStride;
 			}
 		}
 
@@ -1218,6 +1395,441 @@ void Vulkan::destroyPipeline(KGFXpipeline pipeline) {
 		--pipelines[i]->id;
 	}
 	delete pipeline;
+}
+
+u32 Vulkan::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties props;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &props);
+
+	for (u32 i = 0; i < props.memoryTypeCount; ++i) {
+		if ((typeFilter & (1 << i)) && (props.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	DEBUG_OUT("Failed to find suitable memory type");
+	return std::numeric_limits<u32>::max();
+}
+
+KGFXbuffer Vulkan::createBuffer(KGFXbufferdesc bufferDesc) {
+	KGFXbuffer buffer = new KGFXbuffer_t;
+	if (bufferDesc.size == 0) {
+		buffer->buffer = VK_NULL_HANDLE;
+		buffer->memory = VK_NULL_HANDLE;
+		buffer->size = 0;
+		return buffer;
+	}
+
+	VkBufferCreateInfo bufferCreateInfo = {};
+	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferCreateInfo.size = bufferDesc.size;
+	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | bufferUsageVkFlags(bufferDesc.usage);
+	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkResult res = vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer->buffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create VkBuffer");
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkMemoryRequirements memoryRequirements;
+	vkGetBufferMemoryRequirements(device, buffer->buffer, &memoryRequirements);
+
+	VkMemoryAllocateInfo memoryAllocateInfo = {};
+	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	memoryAllocateInfo.allocationSize = memoryRequirements.size;
+	memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	res = vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &buffer->memory);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkDeviceMemory");
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	res = vkBindBufferMemory(device, buffer->buffer, buffer->memory, 0);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to bind VkBuffer to VkDeviceMemory");
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (bufferDesc.pData == nullptr) {
+		return buffer;
+	}
+
+	VkBufferCreateInfo stagingBufferCreateInfo = {};
+	stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	stagingBufferCreateInfo.size = bufferDesc.size;
+	stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkBuffer stagingBuffer;
+	res = vkCreateBuffer(device, &stagingBufferCreateInfo, nullptr, &stagingBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create staging VkBuffer");
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkMemoryRequirements stagingMemoryRequirements;
+	vkGetBufferMemoryRequirements(device, stagingBuffer, &stagingMemoryRequirements);
+
+	VkMemoryAllocateInfo stagingMemoryAllocateInfo = {};
+	stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+	stagingMemoryAllocateInfo.memoryTypeIndex = findMemoryType(stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	VkDeviceMemory stagingMemory;
+	res = vkAllocateMemory(device, &stagingMemoryAllocateInfo, nullptr, &stagingMemory);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate staging VkDeviceMemory");
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	res = vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to bind staging VkBuffer to staging VkDeviceMemory");
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	void* data;
+	res = vkMapMemory(device, stagingMemory, 0, bufferDesc.size, 0, &data);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to map staging VkDeviceMemory");
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	memcpy(data, bufferDesc.pData, bufferDesc.size);
+	vkUnmapMemory(device, stagingMemory);
+
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocateInfo.commandPool = commandPool;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocateInfo.commandBufferCount = 1;
+	
+	VkCommandBuffer commandBuffer;
+	res = vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkCommandBuffer");
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+	commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	res = vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to begin recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkBufferCopy bufferCopy = {};
+	bufferCopy.size = bufferDesc.size;
+	bufferCopy.srcOffset = 0;
+	bufferCopy.dstOffset = 0;
+	vkCmdCopyBuffer(commandBuffer, stagingBuffer, buffer->buffer, 1, &bufferCopy);
+
+	res = vkEndCommandBuffer(commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to end recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	
+	res = vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to submit VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	res = vkQueueWaitIdle(transferQueue);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to wait for VkQueue");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_HANDLE_NULL;
+	}
+
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+	vkFreeMemory(device, stagingMemory, nullptr);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+
+	buffer->size = bufferDesc.size;
+	return buffer;
+}
+
+KGFXresult Vulkan::uploadBuffer(KGFXbuffer buffer, u32 size, void* data) {
+	if (size > buffer->size) {
+		DEBUG_OUT("Invalid upload size");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	VkBufferCreateInfo stagingBufferCreateInfo = {};
+	stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	stagingBufferCreateInfo.size = size;
+	stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkBuffer stagingBuffer;
+	VkResult res = vkCreateBuffer(device, &stagingBufferCreateInfo, nullptr, &stagingBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create staging VkBuffer");
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkMemoryRequirements stagingMemoryRequirements;
+	vkGetBufferMemoryRequirements(device, stagingBuffer, &stagingMemoryRequirements);
+
+	VkMemoryAllocateInfo stagingMemoryAllocateInfo = {};
+	stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+	stagingMemoryAllocateInfo.memoryTypeIndex = findMemoryType(stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	VkDeviceMemory stagingMemory;
+	res = vkAllocateMemory(device, &stagingMemoryAllocateInfo, nullptr, &stagingMemory);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate staging VkDeviceMemory");
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	res = vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to bind staging VkBuffer to staging VkDeviceMemory");
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	void* mapped;
+	res = vkMapMemory(device, stagingMemory, 0, size, 0, &mapped);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to map staging VkDeviceMemory");
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	memcpy(mapped, data, size);
+	vkUnmapMemory(device, stagingMemory);
+
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocateInfo.commandPool = commandPool;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocateInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	res = vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkCommandBuffer");
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+	commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	res = vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to begin recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkBufferCopy bufferCopy = {};
+	bufferCopy.size = size;
+	bufferCopy.srcOffset = 0;
+	bufferCopy.dstOffset = 0;
+	vkCmdCopyBuffer(commandBuffer, stagingBuffer, buffer->buffer, 1, &bufferCopy);
+
+	res = vkEndCommandBuffer(commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to end recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	res = vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to submit VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	res = vkQueueWaitIdle(transferQueue);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to wait for VkQueue");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeMemory(device, stagingMemory, nullptr);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		delete buffer;
+		return KGFX_GENERIC_ERROR;
+	}
+
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+	vkFreeMemory(device, stagingMemory, nullptr);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	return KGFX_SUCCESS;
+}
+
+void Vulkan::destroyBuffer(KGFXbuffer buffer) {
+	if (buffer->memory != VK_NULL_HANDLE) {
+		vkDestroyBuffer(device, buffer->buffer, nullptr);
+		vkFreeMemory(device, buffer->memory, nullptr);
+	}
+	delete buffer;
+}
+
+KGFXmesh Vulkan::createMesh(KGFXmeshdesc meshDesc) {
+	KGFXmesh mesh = new KGFXmesh_t;
+	mesh->vertexBuffer = KGFX_HANDLE_NULL;
+	mesh->vertexOffset = 0;
+	mesh->indexBuffer = KGFX_HANDLE_NULL;
+	mesh->indexOffset = 0;
+
+	for (u32 i = 0; i < meshDesc.bufferCount; ++i) {
+		if (meshDesc.pBuffers[i].bindpoint == KGFX_MESH_BUFFER_BINDPOINT_VERTEX) {
+			if (mesh->vertexBuffer != KGFX_HANDLE_NULL) {
+				DEBUG_OUT("Multiple vertex buffers in KGFXmeshdesc");
+				delete mesh;
+				return KGFX_HANDLE_NULL;
+			}
+			mesh->vertexBuffer = meshDesc.pBuffers[i].buffer;
+			mesh->vertexOffset = meshDesc.pBuffers[i].offset;
+		} else if (meshDesc.pBuffers[i].bindpoint == KGFX_MESH_BUFFER_BINDPOINT_INDEX) {
+			if (mesh->indexBuffer != KGFX_HANDLE_NULL) {
+				DEBUG_OUT("Multiple index buffers in KGFXmeshdesc");
+				delete mesh;
+				return KGFX_HANDLE_NULL;
+			}
+			mesh->indexBuffer = meshDesc.pBuffers[i].buffer;
+			mesh->indexOffset = meshDesc.pBuffers[i].offset;
+		}
+	}
+
+	return mesh;
+}
+
+void Vulkan::destroyMesh(KGFXmesh mesh) {
+	delete mesh;
+}
+
+KGFXpipelinemesh Vulkan::pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
+	KGFXpipelinemesh pipelineMesh = new KGFXpipelinemesh_t;
+	pipelineMesh->mesh = mesh;
+	pipelineMesh->id = pipeline->meshes.size();
+	pipelineMesh->binding = binding;
+	pipeline->meshes.push_back(pipelineMesh);
+
+	return pipelineMesh;
+}
+
+void Vulkan::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh) {
+	u32 id = pipelineMesh->id;
+	if (id >= pipeline->meshes.size()) {
+		DEBUG_OUT("Invalid KGFXpipelinemesh");
+		return;
+	}
+
+	pipeline->meshes.erase(pipeline->meshes.begin() + id);
+	for (u32 i = id; i < pipeline->meshes.size(); ++i) {
+		--pipeline->meshes[i]->id;
+	}
+	delete pipelineMesh;
 }
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format) {

@@ -5,6 +5,6 @@
 
 KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window) {
 	KGFXwindow win;
-	win.hwnd = glfwGetWin32Window(window);
+	win.hwnd = (void*) glfwGetWin32Window(window);
 	return win;
 }

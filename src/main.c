@@ -93,8 +93,21 @@ int main(int argc, char** argv) {
 	KGFXpipelinedesc pipelineDesc;
 	pipelineDesc.pShaders = (KGFXshader[]) { vshader, fshader };
 	pipelineDesc.shaderCount = 2;
-	pipelineDesc.layout.pBindings = NULL;
-	pipelineDesc.layout.bindingCount = 0;
+
+	KGFXpipelineattribute attributes[2] = {
+		{ KGFX_DATATYPE_FLOAT2, 0 },
+		{ KGFX_DATATYPE_FLOAT3, 1 },
+	};
+
+	KGFXpipelinebinding binding;
+	binding.inputRate = KGFX_VERTEX_INPUT_RATE_VERTEX;
+	binding.attributeCount = 2;
+	binding.pAttributes = &attributes;
+	binding.bindpoint = KGFX_BINDPOINT_VERTEX;
+	binding.binding = 0;
+
+	pipelineDesc.layout.pBindings = &binding;
+	pipelineDesc.layout.bindingCount = 1;
 	pipelineDesc.layout.pDescriptorSets = NULL;
 	pipelineDesc.layout.descriptorSetCount = 0;
 
@@ -105,12 +118,48 @@ int main(int argc, char** argv) {
 	kgfxDestroyShader(ctx, vshader);
 	kgfxDestroyShader(ctx, fshader);
 
+	f32 vertices[] = {
+		 0.5f,  0.5f,	1, 1, 0,
+		-0.5f,  0.5f,	1, 0, 1,
+		 0.0f, -0.5f,	0, 1, 1,
+	};
+
+	KGFXbufferdesc bufferDesc;
+	bufferDesc.location = KGFX_BUFFER_LOCATION_GPU;
+	bufferDesc.usage = KGFX_BUFFER_USAGE_VERTEX_BUFFER;
+	bufferDesc.size = sizeof(vertices);
+	bufferDesc.pData = vertices;
+
+	KGFXbuffer buffer = kgfxCreateBuffer(ctx, bufferDesc);
+	if (buffer == KGFX_HANDLE_NULL) {
+		return 1;
+	}
+
+	KGFXmeshbuffer meshBuffer;
+	meshBuffer.buffer = buffer;
+	meshBuffer.bindpoint = KGFX_MESH_BUFFER_BINDPOINT_VERTEX;
+	meshBuffer.offset = 0;
+
+	KGFXmeshdesc meshDesc;
+	meshDesc.pBuffers = &meshBuffer;
+	meshDesc.bufferCount = 1;
+	KGFXmesh mesh = kgfxCreateMesh(ctx, meshDesc);
+	if (mesh == KGFX_HANDLE_NULL) {
+		return 1;
+	}
+
+	KGFXpipelinemesh pipelinemesh = kgfxPipelineAddMesh(ctx, pipeline, mesh, 0);
+	if (pipelinemesh == KGFX_HANDLE_NULL) {
+		return 1;
+	}
+
 	while (!glfwWindowShouldClose(window)) {
 		kgfxRender(ctx, pipeline);
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
+	kgfxDestroyBuffer(ctx, buffer);
 	kgfxDestroyPipeline(ctx, pipeline);
 	kgfxDestroyContext(ctx);
 	return 0;

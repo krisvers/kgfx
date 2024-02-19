@@ -17,6 +17,7 @@ extern "C" {
 	1.2.3 = 0x01002003
 */
 #define KGFX_MAKE_VERSION(major, minor, patch) ((u32) (((major << 24) & 0xFF) | ((minor << 12) & 0xFFF) | (patch & 0xFFF)))
+#define KGFX_HEADER_VERSION 0x01000000
 #define KGFX_ANY_MAJOR 0xFF
 #define KGFX_ANY_MINOR 0xFFF
 #define KGFX_ANY_PATCH 0xFFF
@@ -33,8 +34,12 @@ typedef enum {
 	KGFX_GENERIC_ERROR = 1,
 	KGFX_VERSION_NOT_SUPPORTED = 2,
 	KGFX_NULL_OUTPUT_ARGUMENT = 3,
+	KGFX_INVALID_CONTEXT = 4,
+	KGFX_NOT_IMPLEMENTED = 5,
+	KGFX_INVALID_ARGUMENT = 6,
 } KGFXresult;
 
+/* pipeline related enumerations */
 typedef enum {
 	KGFX_SHADERTYPE_VERTEX = 0,
 	KGFX_SHADERTYPE_FRAGMENT = 1,
@@ -89,9 +94,44 @@ typedef enum {
 	KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER = 0,
 	KGFX_DESCRIPTOR_USAGE_STORAGE_BUFFER = 1,
 	KGFX_DESCRIPTOR_USAGE_COUNT,
-	KGFX_DESCRIPTOR_USAGE_MAX = KGFX_DESCRIPTOR_USAGE_STORAGE_BUFFER,
+	KGFX_DESCRIPTOR_USAGE_MAX = KGFX_DESCRIPTOR_USAGE_COUNT - 1,
 	KGFX_DESCRIPTOR_USAGE_MIN = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER,
 } KGFXdescriptorusage;
+
+/* buffer related enumerations */
+typedef enum {
+	KGFX_BUFFER_LOCATION_CPU = 0,
+	KGFX_BUFFER_LOCATION_GPU = 1,
+} KGFXbufferlocation;
+
+typedef enum {
+	KGFX_BUFFER_USAGE_VERTEX_BUFFER = 1,
+	KGFX_BUFFER_USAGE_INDEX_BUFFER = 2,
+	KGFX_BUFFER_USAGE_UNIFORM_BUFFER = 4,
+	KGFX_BUFFER_USAGE_STORAGE_BUFFER = 8,
+	KGFX_BUFFER_USAGE_COUNT,
+	KGFX_BUFFER_USAGE_MAX = KGFX_BUFFER_USAGE_COUNT - 1,
+	KGFX_BUFFER_USAGE_MIN = KGFX_BUFFER_USAGE_VERTEX_BUFFER,
+} KGFXbufferusageflags;
+
+typedef enum {
+	KGFX_MESH_BUFFER_BINDPOINT_VERTEX = 0,
+	KGFX_MESH_BUFFER_BINDPOINT_INDEX = 1,
+	KGFX_MESH_BUFFER_BINDPOINT_COUNT,
+	KGFX_MESH_BUFFER_BINDPOINT_MAX = KGFX_MESH_BUFFER_BINDPOINT_COUNT - 1,
+	KGFX_MESH_BUFFER_BINDPOINT_MIN = KGFX_MESH_BUFFER_BINDPOINT_VERTEX,
+} KGFXmeshbufferbindpoint;
+
+typedef enum {
+	KGFX_MESH_TOPOLOGY_POINTS = 0,
+	KGFX_MESH_TOPOLOGY_LINES = 1,
+	KGFX_MESH_TOPOLOGY_LINE_STRIP = 2,
+	KGFX_MESH_TOPOLOGY_TRIANGLES = 3,
+	KGFX_MESH_TOPOLOGY_TRIANGLE_STRIP = 4,
+	KGFX_MESH_TOPOLOGY_COUNT,
+	KGFX_MESH_TOPOLOGY_MAX = KGFX_MESH_TOPOLOGY_COUNT - 1,
+	KGFX_MESH_TOPOLOGY_MIN = KGFX_MESH_TOPOLOGY_POINTS,
+} KGFXmeshtopology;
 
 #define KGFX_IS_SUCCESSFUL(result) ((result) == KGFX_SUCCESS)
 
@@ -102,10 +142,12 @@ KGFX_DEFINE_HANDLE(KGFXpipeline);
 KGFX_DEFINE_HANDLE(KGFXrenderpass);
 KGFX_DEFINE_HANDLE(KGFXshader);
 
-#ifdef KGFX_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+/* buffer related handles */
+KGFX_DEFINE_HANDLE(KGFXbuffer);
+KGFX_DEFINE_HANDLE(KGFXmesh);
+KGFX_DEFINE_HANDLE(KGFXpipelinemesh);
 
+#ifdef KGFX_WINDOWS
 typedef struct {
 	void* hwnd;
 } KGFXwindowWIN;
@@ -161,6 +203,25 @@ typedef struct {
 	KGFXpipelinelayout layout;
 } KGFXpipelinedesc;
 
+/* buffer related structures */
+typedef struct {
+	KGFXbufferlocation location;
+	KGFXbufferusageflags usage;
+	u32 size;
+	void* pData;
+} KGFXbufferdesc;
+
+typedef struct {
+	KGFXbuffer buffer;
+	KGFXmeshbufferbindpoint bindpoint;
+	u32 offset;
+} KGFXmeshbuffer;
+
+typedef struct {
+	KGFXmeshbuffer* pBuffers;
+	u32 bufferCount;
+} KGFXmeshdesc;
+
 /*
 	initializes a kgfx context with requested version
 	any non KGFX_SUCCESS result is a failure
@@ -185,7 +246,21 @@ void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader);
 
 KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc);
 
+KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
+
+void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh);
+
 void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline);
+
+KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc);
+
+KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* data);
+
+void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer);
+
+KGFXmesh kgfxCreateMesh(KGFXcontext ctx, KGFXmeshdesc meshDesc);
+
+void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh);
 
 /* returns implementation version */
 u32 kgfxGetImplementationVersion();
