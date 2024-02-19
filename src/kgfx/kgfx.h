@@ -164,6 +164,7 @@ typedef KGFXwindowXlib KGFXwindow;
 typedef struct {
 	void* window;
 	void* contentView;
+	void* layer;
 } KGFXwindowCocoa;
 
 typedef KGFXwindowCocoa KGFXwindow;

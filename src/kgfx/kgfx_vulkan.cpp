@@ -805,7 +805,7 @@ VkResult Vulkan::createSurface(std::function<u32(const VkSurfaceFormatKHR* forma
 #elif KGFX_MACOS
 	VkMacOSSurfaceCreateInfoMVK createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
-	createInfo.pView = reinterpret_cast<CAMetalLayer*>(ctx->window.contentView);
+	createInfo.pView = ctx->window.contentView;
 
 	res = vkCreateMacOSSurfaceMVK(instance, &createInfo, nullptr, &surface);
 #endif

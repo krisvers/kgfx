@@ -6,12 +6,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef KGFX_MACOS
+#include <unistd.h>
+#endif
+
 #include "kgfx_gh.h"
 
 int main(int argc, char** argv) {
 	if (!glfwInit()) {
 		return 1;
 	}
+
+	#ifdef KGFX_MACOS
+	if (argc >= 2) {
+		chdir(argv[1]);
+	}
+	#endif
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	GLFWwindow* window = glfwCreateWindow(800, 600, "kgfx", NULL, NULL);
@@ -52,6 +62,7 @@ int main(int argc, char** argv) {
 
 		fclose(fp);
 	}
+	
 	KGFXshader vshader = kgfxCreateShader(ctx, (const void*) vsrc, (u32) vsize, KGFX_SHADERTYPE_VERTEX, KGFX_MEDIUM_SPIRV);
 	free(vsrc);
 	if (vshader == KGFX_HANDLE_NULL) {
@@ -84,6 +95,7 @@ int main(int argc, char** argv) {
 
 		fclose(fp);
 	}
+	
 	KGFXshader fshader = kgfxCreateShader(ctx, (const void*) fsrc, (u32) fsize, KGFX_SHADERTYPE_FRAGMENT, KGFX_MEDIUM_SPIRV);
 	free(fsrc);
 	if (fshader == KGFX_HANDLE_NULL) {
@@ -102,7 +114,7 @@ int main(int argc, char** argv) {
 	KGFXpipelinebinding binding;
 	binding.inputRate = KGFX_VERTEX_INPUT_RATE_VERTEX;
 	binding.attributeCount = 2;
-	binding.pAttributes = &attributes;
+	binding.pAttributes = attributes;
 	binding.bindpoint = KGFX_BINDPOINT_VERTEX;
 	binding.binding = 0;
 
@@ -159,6 +171,7 @@ int main(int argc, char** argv) {
 		glfwPollEvents();
 	}
 
+	printf("objects of crunching and destruction\n");
 	kgfxDestroyBuffer(ctx, buffer);
 	kgfxDestroyPipeline(ctx, pipeline);
 	kgfxDestroyContext(ctx);

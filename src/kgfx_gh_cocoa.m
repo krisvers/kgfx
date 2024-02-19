@@ -6,8 +6,24 @@
 #include <GLFW/glfw3native.h>
 
 KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window) {
-	KGFXwindow win;
-	win.window = glfwGetCocoaWindow(window);
-	win.contentView = [CAMetalLayer layer];
-	return win;
+	@autoreleasepool {
+		KGFXwindow win;
+		NSWindow* nswin = glfwGetCocoaWindow(window);
+		win.window = nswin;
+
+		int w, h;
+		glfwGetWindowSize(window, &w, &h);
+		
+		CGSize size;
+		size.width = w;
+		size.height = h;
+
+		NSBundle* bundle = [NSBundle bundleWithPath:@"/System/Library/Frameworks/QuartzCore.framework"];
+		CAMetalLayer* layer = [[bundle classNamed:@"CAMetalLayer"] layer];
+		[layer setDrawableSize:size];
+		win.contentView = [nswin contentView];
+		win.layer = layer;
+		
+		return win;
+	}
 }
