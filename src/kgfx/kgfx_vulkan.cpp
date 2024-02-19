@@ -702,6 +702,7 @@ void Vulkan::render(KGFXpipeline pipeline) {
 	renderingAttachmentInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
 	renderingAttachmentInfo.imageView = swapchainImageViews[imageIndex];
 	renderingAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	renderingAttachmentInfo.clearValue = { { { 0, 0, 0, 1 } } };
 
 	pipeline->renderPass->renderingInfo.colorAttachmentCount = 1;
 	pipeline->renderPass->renderingInfo.pColorAttachments = &renderingAttachmentInfo;
