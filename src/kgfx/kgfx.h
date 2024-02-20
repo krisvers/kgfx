@@ -165,6 +165,20 @@ typedef enum {
 	KGFX_MESH_TOPOLOGY_MIN = KGFX_MESH_TOPOLOGY_POINTS,
 } KGFXmeshtopology;
 
+/* texture related enumerations */
+typedef enum {
+	KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM = 0,
+	KGFX_TEXTURE_FORMAT_R8G8B8A8_SRGB = 1,
+	KGFX_TEXTURE_FORMAT_R32G32B32A32_SFLOAT = 2,
+	KGFX_TEXTURE_FORMAT_R32G32B32_SFLOAT = 3,
+	KGFX_TEXTURE_FORMAT_R32G32_SFLOAT = 4,
+	KGFX_TEXTURE_FORMAT_R32_SFLOAT = 5,
+	KGFX_TEXTURE_FORMAT_D32_SFLOAT = 6,
+	KGFX_TEXTURE_FORMAT_COUNT,
+	KGFX_TEXTURE_FORMAT_MAX = KGFX_TEXTURE_FORMAT_COUNT - 1,
+	KGFX_TEXTURE_FORMAT_MIN = KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM,
+} KGFXtextureformat;
+
 #define KGFX_IS_SUCCESSFUL(result) ((result) == KGFX_SUCCESS)
 
 KGFX_DEFINE_HANDLE(KGFXcontext);
@@ -179,6 +193,7 @@ KGFX_DEFINE_HANDLE(KGFXbuffer);
 KGFX_DEFINE_HANDLE(KGFXmesh);
 KGFX_DEFINE_HANDLE(KGFXpipelinemesh);
 KGFX_DEFINE_HANDLE(KGFXuniformbuffer);
+KGFX_DEFINE_HANDLE(KGFXpipelinetexture);
 KGFX_DEFINE_HANDLE(KGFXtexture);
 
 /* pipeline related descriptors */
@@ -233,6 +248,15 @@ typedef struct {
 	u32 bufferCount;
 } KGFXmeshdesc;
 
+typedef struct {
+	KGFXtextureformat format;
+	u32 width;
+	u32 height;
+	u32 depth;
+	u32 mipLevels;
+	KGFXbuffer buffer;
+} KGFXtexturedesc;
+
 /*
 	initializes a kgfx context with requested version
 	any non KGFX_SUCCESS result is a failure
@@ -282,6 +306,10 @@ void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer);
 KGFXmesh kgfxCreateMesh(KGFXcontext ctx, KGFXmeshdesc meshDesc);
 
 void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh);
+
+KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc);
+
+void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture);
 
 /* returns implementation version */
 u32 kgfxGetImplementationVersion();

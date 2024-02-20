@@ -101,6 +101,7 @@ struct Vulkan {
 	KGFXresult copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
 
 	KGFXmesh createMesh(KGFXmeshdesc meshDesc);
+	KGFXtexture createTexture(KGFXtexturedesc textureDesc);
 
 	KGFXshader createShader(const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium);
 	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
@@ -115,6 +116,7 @@ struct Vulkan {
 	void destroyPipeline(KGFXpipeline pipeline);
 	void destroyBuffer(KGFXbuffer buffer);
 	void destroyMesh(KGFXmesh mesh);
+	void destroyTexture(KGFXtexture texture);
 
 	u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 };
@@ -180,6 +182,14 @@ struct KGFXuniformbuffer_t {
 struct KGFXdescriptorset_t {
 	KGFXdescriptorusage usage;
 	void* desc;
+};
+
+struct KGFXtexture_t {
+	VkImage image;
+	VkImageView view;
+	VkFormat format;
+	VkExtent3D extent;
+	KGFXbuffer buffer;
 };
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format);
@@ -563,6 +573,29 @@ void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh) {
 	}
 
 	ctx->vulkan.destroyMesh(mesh);
+}
+
+KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.createTexture(textureDesc);
+}
+
+void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (texture == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXtexture");
+		return;
+	}
+
+	ctx->vulkan.destroyTexture(texture);
 }
 
 VkResult Vulkan::init() {
@@ -2100,6 +2133,14 @@ KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline,
 
 	vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 	return uniformBuffer;
+}
+
+KGFXtexture createTexture(KGFXtexturedesc textureDesc) {
+	return KGFX_HANDLE_NULL;
+}
+
+void destroyTexture(KGFXtexture texture) {
+
 }
 
 void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
