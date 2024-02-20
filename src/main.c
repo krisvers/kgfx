@@ -1,6 +1,7 @@
 #include "kgfx/kgfx.h"
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#include <linmath.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -118,10 +119,17 @@ int main(int argc, char** argv) {
 	binding.bindpoint = KGFX_BINDPOINT_VERTEX;
 	binding.binding = 0;
 
+	KGFXdatatype descriptorSetType = KGFX_DATATYPE_MAT4;
+
+	KGFXdescriptorsetdesc descriptorSetDesc;
+	descriptorSetDesc.bindpoint = KGFX_BINDPOINT_VERTEX;
+	descriptorSetDesc.binding = 0;
+	descriptorSetDesc.usage = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER;
+
 	pipelineDesc.layout.pBindings = &binding;
 	pipelineDesc.layout.bindingCount = 1;
-	pipelineDesc.layout.pDescriptorSets = NULL;
-	pipelineDesc.layout.descriptorSetCount = 0;
+	pipelineDesc.layout.pDescriptorSets = &descriptorSetDesc;
+	pipelineDesc.layout.descriptorSetCount = 1;
 
 	KGFXpipeline pipeline = kgfxCreatePipeline(ctx, pipelineDesc);
 	if (pipeline == KGFX_HANDLE_NULL) {
@@ -165,13 +173,34 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	mat4x4 matrixData;
+	mat4x4_identity(matrixData);
+	mat4x4_translate(matrixData, 0.5f, 0.5f, 0.0f);
+
+	KGFXbuffer uBuffer = kgfxCreateBuffer(ctx, (KGFXbufferdesc) {
+		.location = KGFX_BUFFER_LOCATION_CPU,
+		.usage = KGFX_BUFFER_USAGE_UNIFORM_BUFFER,
+		.size = sizeof(f32) * 16,
+		.pData = NULL,
+	});
+
+	KGFXuniformbuffer uniformBuffer = kgfxPipelineBindDescriptorSetBuffer(ctx, pipeline, uBuffer, 0, 0);
+
+	void* mapped = kgfxBufferMap(ctx, uBuffer);
+	if (mapped == NULL) {
+		printf("failed to map kgfx buffer\n");
+		return 1;
+	}
+	memcpy(mapped, matrixData, sizeof(f32) * 16);
+	kgfxBufferUnmap(ctx, uBuffer);
+
 	while (!glfwWindowShouldClose(window)) {
 		kgfxRender(ctx, pipeline);
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
-	printf("objects of crunching and destruction\n");
+	printf("objects for krunching and destruktion\n");
 	kgfxDestroyBuffer(ctx, buffer);
 	kgfxDestroyPipeline(ctx, pipeline);
 	kgfxDestroyContext(ctx);

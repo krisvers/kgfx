@@ -96,6 +96,9 @@ struct Vulkan {
 
 	KGFXbuffer createBuffer(KGFXbufferdesc bufferDesc);
 	KGFXresult uploadBuffer(KGFXbuffer buffer, u32 size, void* data);
+	void* mapBuffer(KGFXbuffer buffer);
+	void unmapBuffer(KGFXbuffer buffer);
+	KGFXresult copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
 
 	KGFXmesh createMesh(KGFXmeshdesc meshDesc);
 
@@ -105,8 +108,8 @@ struct Vulkan {
 	KGFXpipelinemesh pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
 	void pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh);
 
-	KGFXuniformbuffer pipelineBindUniformBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding);
-	void pipelineUnbindUniformBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
+	KGFXuniformbuffer pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset);
+	void pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
 
 	void destroyShader(KGFXshader shader);
 	void destroyPipeline(KGFXpipeline pipeline);
@@ -136,12 +139,12 @@ struct KGFXpipeline_t {
 	KGFXrenderpass renderPass;
 	VkDescriptorSetLayout descriptorSetLayout;
 	VkDescriptorPool descriptorPool;
-	VkDescriptorSet descriptorSet;
+	std::vector<VkDescriptorSet> vkDescriptorSets;
 
 	u32 vertexStride;
 	std::vector<KGFXpipelinemesh> meshes;
 
-	std::vector<KGFXuniformbuffer> uniformBuffers;
+	std::vector<struct KGFXdescriptorset_t> descriptorSets;
 };
 
 struct KGFXrenderpass_t {
@@ -170,7 +173,13 @@ struct KGFXpipelinemesh_t {
 struct KGFXuniformbuffer_t {
 	u32 id;
 	u32 binding;
+	u32 offset;
 	KGFXbuffer buffer;
+};
+
+struct KGFXdescriptorset_t {
+	KGFXdescriptorusage usage;
+	void* desc;
 };
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format);
@@ -271,6 +280,28 @@ constexpr VkBufferUsageFlags bufferUsageVkFlags(KGFXbufferusageflags usage) {
 	}
 
 	return flags;
+}
+
+constexpr VkDescriptorType descriptorUsageVkUsage(KGFXdescriptorusage usage) {
+	switch (usage) {
+	case KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER:
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	case KGFX_DESCRIPTOR_USAGE_STORAGE_BUFFER:
+		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	case KGFX_DESCRIPTOR_USAGE_TEXTURE:
+		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	case KGFX_DESCRIPTOR_USAGE_STORAGE_TEXTURE:
+		return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	}
+}
+
+constexpr VkMemoryPropertyFlags bufferLocationVkMemoryPropertyFlags(KGFXbufferlocation location) {
+	switch (location) {
+	case KGFX_BUFFER_LOCATION_CPU:
+		return VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	case KGFX_BUFFER_LOCATION_GPU:
+		return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	}
 }
 
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
@@ -414,7 +445,7 @@ void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipeline
 }
 
 
-KGFXuniformbuffer kgfxPipelineBindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding) {
+KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return KGFX_HANDLE_NULL;
@@ -430,10 +461,10 @@ KGFXuniformbuffer kgfxPipelineBindUniformBuffer(KGFXcontext ctx, KGFXpipeline pi
 		return KGFX_HANDLE_NULL;
 	}
 
-	return ctx->vulkan.pipelineBindUniformBuffer(pipeline, buffer, binding);
+	return ctx->vulkan.pipelineBindDescriptorSetBuffer(pipeline, buffer, binding, offset);
 }
 
-void kgfxPipelineUnbindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return;
@@ -449,7 +480,7 @@ void kgfxPipelineUnbindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGF
 		return;
 	}
 
-	ctx->vulkan.pipelineUnbindUniformBuffer(pipeline, uniformBuffer);
+	ctx->vulkan.pipelineUnbindDescriptorSetBuffer(pipeline, uniformBuffer);
 }
 
 KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
@@ -468,6 +499,33 @@ KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* 
 	}
 
 	return ctx->vulkan.uploadBuffer(buffer, size, data);
+}
+
+void* kgfxBufferMap(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->vulkan.mapBuffer(buffer);
+}
+
+void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->vulkan.unmapBuffer(buffer);
+}
+
+KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_INVALID_CONTEXT;
+	}
+
+	return ctx->vulkan.copyBuffer(dstBuffer, srcBuffer, size, dstOffset, srcOffset);
 }
 
 void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
@@ -761,6 +819,8 @@ void Vulkan::render(KGFXpipeline pipeline) {
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0, pipeline->vkDescriptorSets.size(), pipeline->vkDescriptorSets.data(), 0, nullptr);
 
 	VkDeviceSize offset = 0;
 	for (KGFXpipelinemesh& pipelineMesh : pipeline->meshes) {
@@ -1166,7 +1226,7 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 
 	for (u32 i = 0; i < pipelineDesc.layout.descriptorSetCount; ++i) {
 		descriptorSetLayoutBindings[i].binding = pipelineDesc.layout.pDescriptorSets[i].binding;
-		descriptorSetLayoutBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorSetLayoutBindings[i].descriptorType = descriptorUsageVkUsage(pipelineDesc.layout.pDescriptorSets[i].usage);
 		descriptorSetLayoutBindings[i].descriptorCount = 1;
 		descriptorSetLayoutBindings[i].stageFlags = stageFlags[pipelineDesc.layout.pDescriptorSets[i].bindpoint];
 		descriptorSetLayoutBindings[i].pImmutableSamplers = nullptr;
@@ -1180,6 +1240,41 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
+	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
+	descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	descriptorPoolCreateInfo.maxSets = pipelineDesc.layout.descriptorSetCount;
+	descriptorPoolCreateInfo.poolSizeCount = 1;
+	VkDescriptorPoolSize poolSize = {};
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = pipelineDesc.layout.descriptorSetCount;
+	descriptorPoolCreateInfo.pPoolSizes = &poolSize;
+
+	res = vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &pipeline->descriptorPool);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create VkDescriptorPool");
+		vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+		delete pipeline;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = {};
+	descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	descriptorSetAllocateInfo.descriptorPool = pipeline->descriptorPool;
+	descriptorSetAllocateInfo.descriptorSetCount = pipelineDesc.layout.descriptorSetCount;
+	descriptorSetAllocateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
+
+	pipeline->vkDescriptorSets.resize(pipelineDesc.layout.descriptorSetCount);
+	res = vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, pipeline->vkDescriptorSets.data());
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkDescriptorSets");
+		vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(device, pipeline->descriptorPool, nullptr);
+		delete pipeline;
+		return KGFX_HANDLE_NULL;
+	}
+
+	pipeline->descriptorSets.resize(pipelineDesc.layout.descriptorSetCount);
+
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
 	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutCreateInfo.setLayoutCount = 1;
@@ -1191,6 +1286,7 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 	if (res != VK_SUCCESS) {
 		DEBUG_OUT("Failed to create VkPipelineLayout");
 		vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(device, pipeline->descriptorPool, nullptr);
 		delete pipeline;
 		return KGFX_HANDLE_NULL;
 	}
@@ -1358,6 +1454,7 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		DEBUG_OUT("Failed to create VkPipeline");
 		vkDestroyPipelineLayout(device, pipeline->layout, nullptr);
 		vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(device, pipeline->descriptorPool, nullptr);
 		delete pipeline;
 		return KGFX_HANDLE_NULL;
 	}
@@ -1439,6 +1536,7 @@ void Vulkan::destroyPipeline(KGFXpipeline pipeline) {
 	vkDestroyPipeline(device, pipeline->pipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipeline->layout, nullptr);
 	vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(device, pipeline->descriptorPool, nullptr);
 
 	u32 id = pipeline->id;
 	pipelines.erase(pipelines.begin() + id);
@@ -1490,7 +1588,7 @@ KGFXbuffer Vulkan::createBuffer(KGFXbufferdesc bufferDesc) {
 	VkMemoryAllocateInfo memoryAllocateInfo = {};
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, bufferLocationVkMemoryPropertyFlags(bufferDesc.location));
 
 	res = vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &buffer->memory);
 	if (res != VK_SUCCESS) {
@@ -1817,6 +1915,78 @@ KGFXresult Vulkan::uploadBuffer(KGFXbuffer buffer, u32 size, void* data) {
 	return KGFX_SUCCESS;
 }
 
+void* Vulkan::mapBuffer(KGFXbuffer buffer) {
+	void* mapped = nullptr;
+	VkResult res = vkMapMemory(device, buffer->memory, 0, buffer->size, 0, &mapped);
+	if (res != VK_SUCCESS) {
+		return nullptr;
+	}
+
+	return mapped;
+}
+
+void Vulkan::unmapBuffer(KGFXbuffer buffer) {
+	vkUnmapMemory(device, buffer->memory);
+}
+
+KGFXresult Vulkan::copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
+	if (size > dstBuffer->size || size > srcBuffer->size) {
+		DEBUG_OUT("Invalid copy size");
+		return KGFX_SIZE_TOO_LARGE;
+	}
+
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocateInfo.commandPool = commandPool;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocateInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	VkResult res = vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkCommandBuffer");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+	commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	res = vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to begin recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkBufferCopy bufferCopy = {};
+	bufferCopy.size = size;
+	bufferCopy.srcOffset = srcOffset;
+	bufferCopy.dstOffset = dstOffset;
+	vkCmdCopyBuffer(commandBuffer, srcBuffer->buffer, dstBuffer->buffer, 1, &bufferCopy);
+
+	res = vkEndCommandBuffer(commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to end recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	res = vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to submit VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return KGFX_GENERIC_ERROR;
+	}
+
+	return KGFX_SUCCESS;
+}
+
 void Vulkan::destroyBuffer(KGFXbuffer buffer) {
 	if (buffer->memory != VK_NULL_HANDLE) {
 		vkDestroyBuffer(device, buffer->buffer, nullptr);
@@ -1883,27 +2053,63 @@ void Vulkan::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh pipeline
 	delete pipelineMesh;
 }
 
-KGFXuniformbuffer Vulkan::pipelineBindUniformBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding) {
+KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
+	if (pipeline->descriptorSets.size() < binding) {
+		DEBUG_OUT("Invalid binding");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipeline->descriptorSets[binding].desc != nullptr) {
+		DEBUG_OUT("not implemented yet");
+		return KGFX_HANDLE_NULL;
+		//pipelineUnbindDescriptorSetBuffer(pipeline, pipeline->descriptorSets[binding].desc);
+	}
+
+	KGFXdescriptorset_t descriptorSet = {};
 	KGFXuniformbuffer uniformBuffer = new KGFXuniformbuffer_t;
-	uniformBuffer->id = pipeline->uniformBuffers.size();
+	uniformBuffer->id = binding;
 	uniformBuffer->buffer = buffer;
 	uniformBuffer->binding = binding;
-	pipeline->uniformBuffers.push_back(uniformBuffer);
+	uniformBuffer->offset = offset;
+	descriptorSet.desc = reinterpret_cast<void*>(uniformBuffer);
+	pipeline->descriptorSets[binding] = descriptorSet;
 
+	std::vector<VkWriteDescriptorSet> writeDescriptorSets(pipeline->descriptorSets.size());
+	for (u32 i = 0; i < pipeline->descriptorSets.size(); ++i) {
+		KGFXdescriptorusage usage = pipeline->descriptorSets[i].usage;
+		if (usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
+			KGFXuniformbuffer ubuf = reinterpret_cast<KGFXuniformbuffer>(pipeline->descriptorSets[i].desc);
+			VkDescriptorBufferInfo bufferInfo = {};
+			bufferInfo.buffer = ubuf->buffer->buffer;
+			bufferInfo.offset = ubuf->offset;
+			bufferInfo.range = ubuf->buffer->size;
+
+			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writeDescriptorSets[i].dstSet = pipeline->vkDescriptorSets[i];
+			writeDescriptorSets[i].dstBinding = binding;
+			writeDescriptorSets[i].dstArrayElement = 0;
+			writeDescriptorSets[i].descriptorCount = 1;
+			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			writeDescriptorSets[i].pBufferInfo = &bufferInfo;
+		} else {
+			DEBUG_OUT("not implemented yet");
+			delete uniformBuffer;
+			return KGFX_HANDLE_NULL;
+		}
+	}
+
+	vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 	return uniformBuffer;
 }
 
-void Vulkan::pipelineUnbindUniformBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
 	u32 id = uniformBuffer->id;
-	if (id >= pipeline->uniformBuffers.size()) {
-		DEBUG_OUT("Invalid KGFXuniformbuffer");
+	if (id >= pipeline->descriptorSets.size()) {
+		DEBUG_OUT("Invalid KGFXdescriptorset");
 		return;
 	}
 
-	pipeline->uniformBuffers.erase(pipeline->uniformBuffers.begin() + id);
-	for (u32 i = id; i < pipeline->uniformBuffers.size(); ++i) {
-		--pipeline->uniformBuffers[i]->id;
-	}
+	pipeline->descriptorSets[id].desc = nullptr;
 	delete uniformBuffer;
 }
 

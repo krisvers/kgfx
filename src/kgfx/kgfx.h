@@ -62,6 +62,7 @@ typedef enum {
 	KGFX_INVALID_CONTEXT = 4,
 	KGFX_NOT_IMPLEMENTED = 5,
 	KGFX_INVALID_ARGUMENT = 6,
+	KGFX_SIZE_TOO_LARGE = 7,
 } KGFXresult;
 
 /* pipeline related enumerations */
@@ -98,6 +99,10 @@ typedef enum {
 	KGFX_DATATYPE_MAT2,
 	KGFX_DATATYPE_MAT3,
 	KGFX_DATATYPE_MAT4,
+	KGFX_DATATYPE_TEXTURE_SAMPLER,
+	KGFX_DATATYPE_COUNT,
+	KGFX_DATATYPE_MAX = KGFX_DATATYPE_COUNT - 1,
+	KGFX_DATATYPE_MIN = KGFX_DATATYPE_FLOAT,
 } KGFXdatatype;
 
 typedef enum {
@@ -118,6 +123,8 @@ typedef enum {
 typedef enum {
 	KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER = 0,
 	KGFX_DESCRIPTOR_USAGE_STORAGE_BUFFER = 1,
+	KGFX_DESCRIPTOR_USAGE_TEXTURE = 2,
+	KGFX_DESCRIPTOR_USAGE_STORAGE_TEXTURE = 3,
 	KGFX_DESCRIPTOR_USAGE_COUNT,
 	KGFX_DESCRIPTOR_USAGE_MAX = KGFX_DESCRIPTOR_USAGE_COUNT - 1,
 	KGFX_DESCRIPTOR_USAGE_MIN = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER,
@@ -172,6 +179,7 @@ KGFX_DEFINE_HANDLE(KGFXbuffer);
 KGFX_DEFINE_HANDLE(KGFXmesh);
 KGFX_DEFINE_HANDLE(KGFXpipelinemesh);
 KGFX_DEFINE_HANDLE(KGFXuniformbuffer);
+KGFX_DEFINE_HANDLE(KGFXtexture);
 
 /* pipeline related descriptors */
 typedef struct {
@@ -190,14 +198,13 @@ typedef struct {
 typedef struct {
 	KGFXbindpoint bindpoint;
 	u32 binding;
-	KGFXdatatype type;
 	KGFXdescriptorusage usage;
-} KGFXdescriptorset;
+} KGFXdescriptorsetdesc;
 
 typedef struct {
 	KGFXpipelinebinding* pBindings;
 	u32 bindingCount;
-	KGFXdescriptorset* pDescriptorSets;
+	KGFXdescriptorsetdesc* pDescriptorSets;
 	u32 descriptorSetCount;
 } KGFXpipelinelayout;
 
@@ -254,15 +261,21 @@ KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGF
 
 void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh);
 
-KGFXuniformbuffer kgfxPipelineBindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding);
+KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset);
 
-void kgfxPipelineUnbindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
+void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
 
 void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline);
 
 KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc);
 
 KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* data);
+
+void* kgfxBufferMap(KGFXcontext ctx, KGFXbuffer buffer);
+
+void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer);
+
+KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
 
 void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer);
 
