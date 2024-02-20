@@ -105,6 +105,9 @@ struct Vulkan {
 	KGFXpipelinemesh pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
 	void pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh);
 
+	KGFXuniformbuffer pipelineBindUniformBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding);
+	void pipelineUnbindUniformBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
+
 	void destroyShader(KGFXshader shader);
 	void destroyPipeline(KGFXpipeline pipeline);
 	void destroyBuffer(KGFXbuffer buffer);
@@ -137,6 +140,8 @@ struct KGFXpipeline_t {
 
 	u32 vertexStride;
 	std::vector<KGFXpipelinemesh> meshes;
+
+	std::vector<KGFXuniformbuffer> uniformBuffers;
 };
 
 struct KGFXrenderpass_t {
@@ -160,6 +165,12 @@ struct KGFXpipelinemesh_t {
 	u32 id;
 	u32 binding;
 	KGFXmesh mesh;
+};
+
+struct KGFXuniformbuffer_t {
+	u32 id;
+	u32 binding;
+	KGFXbuffer buffer;
 };
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format);
@@ -400,6 +411,45 @@ void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipeline
 	}
 
 	ctx->vulkan.pipelineRemoveMesh(pipeline, pipelineMesh);
+}
+
+
+KGFXuniformbuffer kgfxPipelineBindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.pipelineBindUniformBuffer(pipeline, buffer, binding);
+}
+
+void kgfxPipelineUnbindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (uniformBuffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXuniformbuffer");
+		return;
+	}
+
+	ctx->vulkan.pipelineUnbindUniformBuffer(pipeline, uniformBuffer);
 }
 
 KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
@@ -1831,6 +1881,30 @@ void Vulkan::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh pipeline
 		--pipeline->meshes[i]->id;
 	}
 	delete pipelineMesh;
+}
+
+KGFXuniformbuffer Vulkan::pipelineBindUniformBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding) {
+	KGFXuniformbuffer uniformBuffer = new KGFXuniformbuffer_t;
+	uniformBuffer->id = pipeline->uniformBuffers.size();
+	uniformBuffer->buffer = buffer;
+	uniformBuffer->binding = binding;
+	pipeline->uniformBuffers.push_back(uniformBuffer);
+
+	return uniformBuffer;
+}
+
+void Vulkan::pipelineUnbindUniformBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+	u32 id = uniformBuffer->id;
+	if (id >= pipeline->uniformBuffers.size()) {
+		DEBUG_OUT("Invalid KGFXuniformbuffer");
+		return;
+	}
+
+	pipeline->uniformBuffers.erase(pipeline->uniformBuffers.begin() + id);
+	for (u32 i = id; i < pipeline->uniformBuffers.size(); ++i) {
+		--pipeline->uniformBuffers[i]->id;
+	}
+	delete uniformBuffer;
 }
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format) {

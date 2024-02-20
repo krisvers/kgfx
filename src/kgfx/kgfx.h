@@ -29,6 +29,31 @@ extern "C" {
 #define KGFX_MAGIC 0x8BF7E6A8
 #define KGFX_HANDLE_NULL (0)
 
+/* platform specifics */
+#ifdef KGFX_WINDOWS
+typedef struct {
+	void* hwnd;
+} KGFXwindowWIN;
+
+typedef KGFXwindowWIN KGFXwindow;
+#elif KGFX_LINUX
+typedef struct {
+	void* display;
+	unsigned long window;
+} KGFXwindowXlib;
+
+typedef KGFXwindowXlib KGFXwindow;
+#elif KGFX_MACOS
+typedef struct {
+	void* window;
+	void* contentView;
+	void* layer;
+} KGFXwindowCocoa;
+
+typedef KGFXwindowCocoa KGFXwindow;
+#endif
+
+/* result codes */
 typedef enum {
 	KGFX_SUCCESS = 0,
 	KGFX_GENERIC_ERROR = 1,
@@ -146,29 +171,7 @@ KGFX_DEFINE_HANDLE(KGFXshader);
 KGFX_DEFINE_HANDLE(KGFXbuffer);
 KGFX_DEFINE_HANDLE(KGFXmesh);
 KGFX_DEFINE_HANDLE(KGFXpipelinemesh);
-
-#ifdef KGFX_WINDOWS
-typedef struct {
-	void* hwnd;
-} KGFXwindowWIN;
-
-typedef KGFXwindowWIN KGFXwindow;
-#elif KGFX_LINUX
-typedef struct {
-	void* display;
-	unsigned long window;
-} KGFXwindowXlib;
-
-typedef KGFXwindowXlib KGFXwindow;
-#elif KGFX_MACOS
-typedef struct {
-	void* window;
-	void* contentView;
-	void* layer;
-} KGFXwindowCocoa;
-
-typedef KGFXwindowCocoa KGFXwindow;
-#endif
+KGFX_DEFINE_HANDLE(KGFXuniformbuffer);
 
 /* pipeline related descriptors */
 typedef struct {
@@ -250,6 +253,10 @@ KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc);
 KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
 
 void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh);
+
+KGFXuniformbuffer kgfxPipelineBindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding);
+
+void kgfxPipelineUnbindUniformBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
 
 void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline);
 
