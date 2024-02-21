@@ -3,8 +3,8 @@
 #include <stdio.h>
 
 #import <Metal/Metal.h>
-#include <QuartzCore/CAMetalLayer.h>
-#include <QuartzCore/QuartzCore.h>
+#import <QuartzCore/CAMetalLayer.h>
+#import <QuartzCore/QuartzCore.h>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -20,10 +20,14 @@ struct Metal {
 	KGFXcontext context;
 
 	id<MTLDevice> device;
-	id<MTLCommandQueue> commandQueue
+	id<MTLCommandQueue> commandQueue;
+	id<MTLLibrary> library;
+	id<MTLRenderPipelineState> pipelineState;
+	id<CAMetalDrawable> drawable;
 
 	int init();
 	void destroy();
+	void getDrawable();
 };
 
 typedef struct KGFXcontext_t {
@@ -143,14 +147,81 @@ void kgfxRender(KGFXcontext ctx, KGFXpipeline pipeline) {
 
 int Metal::init() {
 	device = MTLCreateSystemDefaultDevice();
-	[layer setDevice:device];
-	[layer setPixelFormat:MTLPixelFormatBGRA8Unorm];
-	[layer setFrame:[view bounds]];
+	layer.device = device;
+	layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+	layer.frame = [view bounds];
 	[[view layer] addSublayer:layer];
+	commandQueue = [device newCommandQueue];
+
+	MTLCompileOptions* compileOptions = [MTLCompileOptions new];
+
+	NSError* error = NULL;
+	library = [device newLibraryWithSource:@R"(
+		#include <metal_stdlib>
+		typedef struct {
+			float2 pos;
+		} vinput_t;
+
+		typedef struct {
+			float4 position [[position]];
+		} voutput_t;
+
+		vertex voutput_t vertex_function(device vinput_t* vertices [[buffer(0)]], uint vid [[vertex_id]]) {
+			voutput_t out;
+			out.position = float4(vertices[vid].pos, 0.0, 1.0);
+			return out;
+		}
+		
+		fragment half4 fragment_function(voutput_t in [[stage_in]]) {
+			return half4(1.0, 0.0, 1.0, 1.0);
+		}
+	)" options:compileOptions error:&error];
+	if (library == nil) {
+		NSLog(@"Failed to compile shader library, error %@", error);
+		return 1;
+	}
+
+	f32 vertices[6] = {
+		-0.5f, 0.5f,
+		0.0f, -0.5f,
+		0.5f, 0.5f,
+	};
+	id<MTLBuffer> vertexBuffer = [device newBufferWithBytes:vertices length:sizeof(vertices) options:MTLResourceOptionCPUCacheModeDefault];
+
+	id<MTLFunction> vertexProgram = [library newFunctionWithName:@"vertex_function"];
+	id<MTLFunction> fragmentProgram = [library newFunctionWithName:@"fragment_function"];
+
+	MTLRenderPipelineDescriptor* pipelineStateDescriptor = [MTLRenderPipelineDescriptor new];
+	[pipelineStateDescriptor setVertexFunction:vertexProgram];
+	[pipelineStateDescriptor setFragmentFunction:fragmentProgram];
+	pipelineStateDescriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+
+	MTLVertexDescriptor* vertexDescriptor = [MTLVertexDescriptor vertexDescriptor];
+	vertexDescriptor.attributes[0].format = MTLVertexFormatFloat2;
+	vertexDescriptor.attributes[0].offset = 0;
+	vertexDescriptor.attributes[0].bufferIndex = 0;
+
+	pipelineStateDescriptor.vertexDescriptor = vertexDescriptor;
+
+    pipelineState = [device newRenderPipelineStateWithDescriptor:pipelineStateDescriptor error:&error];
+    if (pipelineState == nil) {
+        NSLog(@"Failed to create pipeline state, error %@", error);
+		return 1;
+    }
 
 	return 0;
 }
 
 void Metal::destroy() {
 	
+}
+
+
+void Metal::getDrawable() {
+	id<CAMetalDrawable> d = nil;
+	while (d == nil) {
+		d = [layer nextDrawable];
+	}
+
+	drawable = d;
 }

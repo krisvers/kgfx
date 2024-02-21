@@ -234,6 +234,8 @@ constexpr u32 datatypeSize(KGFXdatatype datatype) {
 	case KGFX_DATATYPE_MAT4:
 		return sizeof(f32) * 4 * 4;
 	}
+
+	return 0;
 }
 
 constexpr VkFormat datatypeVkFormat(KGFXdatatype datatype) {
@@ -269,6 +271,8 @@ constexpr VkFormat datatypeVkFormat(KGFXdatatype datatype) {
 	case KGFX_DATATYPE_MAT4:
 		return VK_FORMAT_UNDEFINED;
 	}
+
+	return VK_FORMAT_UNDEFINED;
 }
 
 constexpr VkBufferUsageFlags bufferUsageVkFlags(KGFXbufferusageflags usage) {
@@ -303,6 +307,8 @@ constexpr VkDescriptorType descriptorUsageVkUsage(KGFXdescriptorusage usage) {
 	case KGFX_DESCRIPTOR_USAGE_STORAGE_TEXTURE:
 		return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	}
+
+	return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 }
 
 constexpr VkMemoryPropertyFlags bufferLocationVkMemoryPropertyFlags(KGFXbufferlocation location) {
@@ -312,6 +318,8 @@ constexpr VkMemoryPropertyFlags bufferLocationVkMemoryPropertyFlags(KGFXbufferlo
 	case KGFX_BUFFER_LOCATION_GPU:
 		return VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	}
+
+	return VK_MEMORY_PROPERTY_FLAG_BITS_MAX_ENUM;
 }
 
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
@@ -948,7 +956,7 @@ VkResult Vulkan::createSurface(std::function<u32(const VkSurfaceFormatKHR* forma
 #elif KGFX_MACOS
 	VkMacOSSurfaceCreateInfoMVK createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
-	createInfo.pView = ctx->window.contentView;
+	createInfo.pView = ctx->window.layer;
 
 	res = vkCreateMacOSSurfaceMVK(instance, &createInfo, nullptr, &surface);
 #endif
@@ -2135,11 +2143,11 @@ KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline,
 	return uniformBuffer;
 }
 
-KGFXtexture createTexture(KGFXtexturedesc textureDesc) {
+KGFXtexture Vulkan::createTexture(KGFXtexturedesc textureDesc) {
 	return KGFX_HANDLE_NULL;
 }
 
-void destroyTexture(KGFXtexture texture) {
+void Vulkan::destroyTexture(KGFXtexture texture) {
 
 }
 
