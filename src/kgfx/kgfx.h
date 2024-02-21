@@ -121,10 +121,11 @@ typedef enum {
 } KGFXbindpoint;
 
 typedef enum {
-	KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER = 0,
-	KGFX_DESCRIPTOR_USAGE_STORAGE_BUFFER = 1,
-	KGFX_DESCRIPTOR_USAGE_TEXTURE = 2,
-	KGFX_DESCRIPTOR_USAGE_STORAGE_TEXTURE = 3,
+	KGFX_DESCRIPTOR_USAGE_INVALID = 0,
+	KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER = 1,
+	KGFX_DESCRIPTOR_USAGE_STORAGE_BUFFER = 2,
+	KGFX_DESCRIPTOR_USAGE_TEXTURE = 3,
+	KGFX_DESCRIPTOR_USAGE_STORAGE_TEXTURE = 4,
 	KGFX_DESCRIPTOR_USAGE_COUNT,
 	KGFX_DESCRIPTOR_USAGE_MAX = KGFX_DESCRIPTOR_USAGE_COUNT - 1,
 	KGFX_DESCRIPTOR_USAGE_MIN = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER,
@@ -141,6 +142,7 @@ typedef enum {
 	KGFX_BUFFER_USAGE_INDEX_BUFFER = 2,
 	KGFX_BUFFER_USAGE_UNIFORM_BUFFER = 4,
 	KGFX_BUFFER_USAGE_STORAGE_BUFFER = 8,
+	KGFX_BUFFER_USAGE_TEXTURE_SRC = 16,
 	KGFX_BUFFER_USAGE_COUNT,
 	KGFX_BUFFER_USAGE_MAX = KGFX_BUFFER_USAGE_COUNT - 1,
 	KGFX_BUFFER_USAGE_MIN = KGFX_BUFFER_USAGE_VERTEX_BUFFER,
@@ -173,11 +175,29 @@ typedef enum {
 	KGFX_TEXTURE_FORMAT_R32G32B32_SFLOAT = 3,
 	KGFX_TEXTURE_FORMAT_R32G32_SFLOAT = 4,
 	KGFX_TEXTURE_FORMAT_R32_SFLOAT = 5,
-	KGFX_TEXTURE_FORMAT_D32_SFLOAT = 6,
+	KGFX_TEXTURE_FORMAT_DEPTH = 6,
 	KGFX_TEXTURE_FORMAT_COUNT,
 	KGFX_TEXTURE_FORMAT_MAX = KGFX_TEXTURE_FORMAT_COUNT - 1,
 	KGFX_TEXTURE_FORMAT_MIN = KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM,
 } KGFXtextureformat;
+
+typedef enum {
+	KGFX_SAMPLER_FILTER_NEAREST = 0,
+	KGFX_SAMPLER_FILTER_LINEAR = 1,
+	KGFX_SAMPLER_FILTER_COUNT,
+	KGFX_SAMPLER_FILTER_MAX = KGFX_SAMPLER_FILTER_COUNT - 1,
+	KGFX_SAMPLER_FILTER_MIN = KGFX_SAMPLER_FILTER_NEAREST,
+} KGFXsamplerfilter;
+
+typedef enum {
+	KGFX_SAMPLER_ADDRESS_MODE_REPEAT = 0,
+	KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT = 1,
+	KGFX_SAMPLER_ADDRESS_MODE_CLAMP = 2,
+	KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_CLAMP = 3,
+	KGFX_SAMPLER_ADDRESS_MODE_COUNT,
+	KGFX_SAMPLER_ADDRESS_MODE_MAX = KGFX_SAMPLER_ADDRESS_MODE_COUNT - 1,
+	KGFX_SAMPLER_ADDRESS_MODE_MIN = KGFX_SAMPLER_ADDRESS_MODE_REPEAT,
+} KGFXsampleraddressmode;
 
 #define KGFX_IS_SUCCESSFUL(result) ((result) == KGFX_SUCCESS)
 
@@ -193,8 +213,9 @@ KGFX_DEFINE_HANDLE(KGFXbuffer);
 KGFX_DEFINE_HANDLE(KGFXmesh);
 KGFX_DEFINE_HANDLE(KGFXpipelinemesh);
 KGFX_DEFINE_HANDLE(KGFXuniformbuffer);
-KGFX_DEFINE_HANDLE(KGFXpipelinetexture);
 KGFX_DEFINE_HANDLE(KGFXtexture);
+KGFX_DEFINE_HANDLE(KGFXsampler);
+KGFX_DEFINE_HANDLE(KGFXpipelinetexture);
 
 /* pipeline related descriptors */
 typedef struct {
@@ -253,9 +274,16 @@ typedef struct {
 	u32 width;
 	u32 height;
 	u32 depth;
-	u32 mipLevels;
-	KGFXbuffer buffer;
 } KGFXtexturedesc;
+
+typedef struct {
+	KGFXsamplerfilter magFilter;
+	KGFXsamplerfilter minFilter;
+	KGFXsamplerfilter mipmapMode;
+	KGFXsampleraddressmode addressModeU;
+	KGFXsampleraddressmode addressModeV;
+	KGFXsampleraddressmode addressModeW;
+} KGFXsamplerdesc;
 
 /*
 	initializes a kgfx context with requested version
@@ -289,6 +317,10 @@ KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipel
 
 void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
 
+KGFXpipelinetexture kgfxPipelineBindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding);
+
+void kgfxPipelineUnbindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture);
+
 void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline);
 
 KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc);
@@ -309,7 +341,13 @@ void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh);
 
 KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc);
 
+KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset);
+
 void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture);
+
+KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc);
+
+void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler);
 
 /* returns implementation version */
 u32 kgfxGetImplementationVersion();

@@ -6,7 +6,7 @@
 #define KGFX_DEBUG
 #endif
 
-// #define KGFX_VALIDATION
+#define KGFX_VALIDATION
 
 #ifdef KGFX_WINDOWS
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -27,6 +27,7 @@
 #include <sstream>
 #include <limits>
 #include <algorithm>
+#include <cstring>
 
 #define KGFX_IMPL_VER KGFX_MAKE_VERSION(1, 0, 0)
 #define KGFX_VK_TARGET_FRAMES 2
@@ -44,6 +45,7 @@ struct Vulkan {
 	VkSurfaceKHR surface;
 	VkSurfaceCapabilitiesKHR surfaceCapabilities;
 	VkPhysicalDevice physicalDevice;
+	VkPhysicalDeviceProperties physicalDeviceProperties;
 	VkDevice device;
 
 	u32 swapchainImageCount = 0;
@@ -99,15 +101,21 @@ struct Vulkan {
 	void* mapBuffer(KGFXbuffer buffer);
 	void unmapBuffer(KGFXbuffer buffer);
 	KGFXresult copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
+	KGFXresult copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset);
 
 	KGFXmesh createMesh(KGFXmeshdesc meshDesc);
 	KGFXtexture createTexture(KGFXtexturedesc textureDesc);
+	KGFXsampler createSampler(KGFXsamplerdesc samplerDesc);
 
 	KGFXshader createShader(const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium);
 	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
 
+	KGFXresult pipelineUpdateDescriptorSets(KGFXpipeline pipeline);
+
 	KGFXpipelinemesh pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
 	void pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh);
+	KGFXpipelinetexture pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding);
+	void pipelineUnbindDescriptorSetTexture(KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture);
 
 	KGFXuniformbuffer pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset);
 	void pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
@@ -117,6 +125,7 @@ struct Vulkan {
 	void destroyBuffer(KGFXbuffer buffer);
 	void destroyMesh(KGFXmesh mesh);
 	void destroyTexture(KGFXtexture texture);
+	void destroySampler(KGFXsampler sampler);
 
 	u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
 };
@@ -180,6 +189,7 @@ struct KGFXuniformbuffer_t {
 };
 
 struct KGFXdescriptorset_t {
+	u32 binding;
 	KGFXdescriptorusage usage;
 	void* desc;
 };
@@ -189,7 +199,17 @@ struct KGFXtexture_t {
 	VkImageView view;
 	VkFormat format;
 	VkExtent3D extent;
-	KGFXbuffer buffer;
+	VkDeviceMemory memory;
+};
+
+struct KGFXsampler_t {
+	VkSampler sampler;
+};
+
+struct KGFXpipelinetexture_t {
+	u32 id;
+	VkImageView imageView;
+	VkSampler sampler;
 };
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format);
@@ -275,6 +295,27 @@ constexpr VkFormat datatypeVkFormat(KGFXdatatype datatype) {
 	return VK_FORMAT_UNDEFINED;
 }
 
+constexpr VkFormat textureFormatVkFormat(KGFXtextureformat format) {
+	switch (format) {
+	case KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM:
+		return VK_FORMAT_R8G8B8A8_UNORM;
+	case KGFX_TEXTURE_FORMAT_R8G8B8A8_SRGB:
+		return VK_FORMAT_R8G8B8A8_SRGB;
+	case KGFX_TEXTURE_FORMAT_R32G32B32A32_SFLOAT:
+		return VK_FORMAT_R32G32B32A32_SFLOAT;
+	case KGFX_TEXTURE_FORMAT_R32G32B32_SFLOAT:
+		return VK_FORMAT_R32G32B32_SFLOAT;
+	case KGFX_TEXTURE_FORMAT_R32G32_SFLOAT:
+		return VK_FORMAT_R32G32_SFLOAT;
+	case KGFX_TEXTURE_FORMAT_R32_SFLOAT:
+		return VK_FORMAT_R32_SFLOAT;
+	case KGFX_TEXTURE_FORMAT_DEPTH:
+		return VK_FORMAT_D32_SFLOAT;
+	}
+
+	return VK_FORMAT_UNDEFINED;
+}
+
 constexpr VkBufferUsageFlags bufferUsageVkFlags(KGFXbufferusageflags usage) {
 	VkBufferUsageFlags flags = 0;
 	if (usage & KGFX_BUFFER_USAGE_VERTEX_BUFFER) {
@@ -291,6 +332,10 @@ constexpr VkBufferUsageFlags bufferUsageVkFlags(KGFXbufferusageflags usage) {
 
 	if (usage & KGFX_BUFFER_USAGE_STORAGE_BUFFER) {
 		flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	}
+
+	if (usage & KGFX_BUFFER_USAGE_TEXTURE_SRC) {
+		flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	}
 
 	return flags;
@@ -320,6 +365,44 @@ constexpr VkMemoryPropertyFlags bufferLocationVkMemoryPropertyFlags(KGFXbufferlo
 	}
 
 	return VK_MEMORY_PROPERTY_FLAG_BITS_MAX_ENUM;
+}
+
+constexpr VkFilter samplerFilterVkFilter(KGFXsamplerfilter filter) {
+	switch (filter) {
+	case KGFX_SAMPLER_FILTER_NEAREST:
+		return VK_FILTER_NEAREST;
+	case KGFX_SAMPLER_FILTER_LINEAR:
+		return VK_FILTER_LINEAR;
+	}
+
+	return VK_FILTER_MAX_ENUM;
+}
+
+constexpr VkSamplerMipmapMode samplerFilterVkMipmapMode(KGFXsamplerfilter filter) {
+	switch (filter) {
+	case KGFX_SAMPLER_FILTER_NEAREST:
+		return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	case KGFX_SAMPLER_FILTER_LINEAR:
+		return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	}
+
+	return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
+}
+
+constexpr VkSamplerAddressMode samplerAddressModeVkSamplerAddressMode(KGFXsampleraddressmode samplerAddressMode) {
+	switch (samplerAddressMode) {
+	case KGFX_SAMPLER_ADDRESS_MODE_REPEAT:
+		return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	case KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
+		return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+	case KGFX_SAMPLER_ADDRESS_MODE_CLAMP:
+		return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	case KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_CLAMP:
+		return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+	}
+
+	return VK_SAMPLER_ADDRESS_MODE_MAX_ENUM;
+
 }
 
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
@@ -501,6 +584,49 @@ void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipelin
 	ctx->vulkan.pipelineUnbindDescriptorSetBuffer(pipeline, uniformBuffer);
 }
 
+KGFXpipelinetexture kgfxPipelineBindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (texture == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXtexture");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (sampler == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXsampler");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.pipelineBindDescriptorSetTexture(pipeline, texture, sampler, binding);
+}
+
+void kgfxPipelineUnbindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (pipelineTexture == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipelinetexture");
+		return;
+	}
+
+	ctx->vulkan.pipelineUnbindDescriptorSetTexture(pipeline, pipelineTexture);
+}
+
 KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
@@ -592,6 +718,25 @@ KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
 	return ctx->vulkan.createTexture(textureDesc);
 }
 
+KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_INVALID_CONTEXT;
+	}
+
+	if (dstTexture == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXtexture");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	if (srcBuffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	return ctx->vulkan.copyBufferToTexture(dstTexture, srcBuffer, srcOffset);
+}
+
 void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
@@ -604,6 +749,29 @@ void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
 	}
 
 	ctx->vulkan.destroyTexture(texture);
+}
+
+KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_HANDLE_NULL;
+	}
+
+	return ctx->vulkan.createSampler(samplerDesc);
+}
+
+void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler) {
+	if (ctx == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	if (sampler == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXsampler");
+		return;
+	}
+
+	ctx->vulkan.destroySampler(sampler);
 }
 
 VkResult Vulkan::init() {
@@ -1021,17 +1189,16 @@ VkResult Vulkan::findPhysicalDevice(std::function<u32(const VkPhysicalDevice* de
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
 
-	VkPhysicalDeviceProperties props;
-	vkGetPhysicalDeviceProperties(physicalDevice, &props);
+	vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 
-	DEBUG_OUTF("Selected VkPhysicalDevice: \"{}\"", props.deviceName);
-	DEBUG_OUTF("  API version: {}.{}.{}", VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion), VK_VERSION_PATCH(props.apiVersion));
-	DEBUG_OUTF("  Driver version: {}.{}.{}", VK_VERSION_MAJOR(props.driverVersion), VK_VERSION_MINOR(props.driverVersion), VK_VERSION_PATCH(props.driverVersion));
-	DEBUG_OUTF("  Vendor ID: {}", props.vendorID);
-	DEBUG_OUTF("  Device ID: {}", props.deviceID);
-	#ifdef KGFX_DEBUG
+	DEBUG_OUTF("Selected VkPhysicalDevice: \"{}\"", physicalDeviceProperties.deviceName);
+	DEBUG_OUTF("  API version: {}.{}.{}", VK_VERSION_MAJOR(physicalDeviceProperties.apiVersion), VK_VERSION_MINOR(physicalDeviceProperties.apiVersion), VK_VERSION_PATCH(physicalDeviceProperties.apiVersion));
+	DEBUG_OUTF("  Driver version: {}.{}.{}", VK_VERSION_MAJOR(physicalDeviceProperties.driverVersion), VK_VERSION_MINOR(physicalDeviceProperties.driverVersion), VK_VERSION_PATCH(physicalDeviceProperties.driverVersion));
+	DEBUG_OUTF("  Vendor ID: {}", physicalDeviceProperties.vendorID);
+	DEBUG_OUTF("  Device ID: {}", physicalDeviceProperties.deviceID);
+#ifdef KGFX_DEBUG
 	{
-		const char* type = (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) ? "software" : (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) ? "discrete" : (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) ? "integrated" : (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU) ? "virtual" : (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_OTHER) ? "other" : "unknown";
+		const char* type = (physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) ? "software" : (physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) ? "discrete" : (physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) ? "integrated" : (physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU) ? "virtual" : (physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_OTHER) ? "other" : "unknown";
 		DEBUG_OUTF("  Device type: {}", type);
 	}
 	#endif
@@ -1119,6 +1286,7 @@ VkResult Vulkan::createDevice() {
 	
 	VkPhysicalDeviceFeatures2 features = {};
 	features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	features.features.samplerAnisotropy = VK_TRUE;
 
 	VkPhysicalDeviceVulkan13Features vk13features = {};
 	vk13features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -1298,11 +1466,13 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
+	std::vector<VkDescriptorSetLayout> descriptorSetLayouts(pipelineDesc.layout.descriptorSetCount, pipeline->descriptorSetLayout);
+
 	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = {};
 	descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	descriptorSetAllocateInfo.descriptorPool = pipeline->descriptorPool;
 	descriptorSetAllocateInfo.descriptorSetCount = pipelineDesc.layout.descriptorSetCount;
-	descriptorSetAllocateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
+	descriptorSetAllocateInfo.pSetLayouts = descriptorSetLayouts.data();
 
 	pipeline->vkDescriptorSets.resize(pipelineDesc.layout.descriptorSetCount);
 	res = vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, pipeline->vkDescriptorSets.data());
@@ -1314,12 +1484,16 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
-	pipeline->descriptorSets.resize(pipelineDesc.layout.descriptorSetCount);
+	KGFXdescriptorset_t defaultDescSet = {};
+	defaultDescSet.binding = std::numeric_limits<u32>::max();
+	defaultDescSet.desc = nullptr;
+	defaultDescSet.usage = KGFX_DESCRIPTOR_USAGE_INVALID;
+	pipeline->descriptorSets.resize(pipelineDesc.layout.descriptorSetCount, defaultDescSet);
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
 	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutCreateInfo.setLayoutCount = 1;
-	pipelineLayoutCreateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
+	pipelineLayoutCreateInfo.setLayoutCount = pipelineDesc.layout.descriptorSetCount;
+	pipelineLayoutCreateInfo.pSetLayouts = descriptorSetLayouts.data();
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
 	pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 
@@ -1602,6 +1776,8 @@ u32 Vulkan::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) {
 }
 
 KGFXbuffer Vulkan::createBuffer(KGFXbufferdesc bufferDesc) {
+	
+
 	KGFXbuffer buffer = new KGFXbuffer_t;
 	if (bufferDesc.size == 0) {
 		buffer->buffer = VK_NULL_HANDLE;
@@ -1609,6 +1785,8 @@ KGFXbuffer Vulkan::createBuffer(KGFXbufferdesc bufferDesc) {
 		buffer->size = 0;
 		return buffer;
 	}
+
+	buffer->size = bufferDesc.size;
 
 	VkBufferCreateInfo bufferCreateInfo = {};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -2029,6 +2207,7 @@ KGFXresult Vulkan::copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 si
 }
 
 void Vulkan::destroyBuffer(KGFXbuffer buffer) {
+	vkDeviceWaitIdle(device);
 	if (buffer->memory != VK_NULL_HANDLE) {
 		vkDestroyBuffer(device, buffer->buffer, nullptr);
 		vkFreeMemory(device, buffer->memory, nullptr);
@@ -2094,6 +2273,55 @@ void Vulkan::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh pipeline
 	delete pipelineMesh;
 }
 
+KGFXresult Vulkan::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
+	std::vector<VkWriteDescriptorSet> writeDescriptorSets(pipeline->descriptorSets.size());
+	for (u32 i = 0; i < pipeline->descriptorSets.size(); ++i) {
+		KGFXdescriptorusage usage = pipeline->descriptorSets[i].usage;
+		if (usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
+			KGFXuniformbuffer ubuf = reinterpret_cast<KGFXuniformbuffer>(pipeline->descriptorSets[i].desc);
+			if (ubuf == nullptr) {
+				continue;
+			}
+
+			VkDescriptorBufferInfo bufferInfo = {};
+			bufferInfo.buffer = ubuf->buffer->buffer;
+			bufferInfo.offset = ubuf->offset;
+			bufferInfo.range = ubuf->buffer->size;
+
+			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writeDescriptorSets[i].dstSet = pipeline->vkDescriptorSets[i];
+			writeDescriptorSets[i].dstBinding = pipeline->descriptorSets[i].binding;
+			writeDescriptorSets[i].dstArrayElement = 0;
+			writeDescriptorSets[i].descriptorCount = 1;
+			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			writeDescriptorSets[i].pBufferInfo = &bufferInfo;
+		} else if (usage == KGFX_DESCRIPTOR_USAGE_TEXTURE) {
+			KGFXpipelinetexture ptexture = reinterpret_cast<KGFXpipelinetexture>(pipeline->descriptorSets[i].desc);
+			if (ptexture == nullptr) {
+				continue;
+			}
+
+			VkDescriptorImageInfo imageInfo = {};
+			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfo.imageView = ptexture->imageView;
+			imageInfo.sampler = ptexture->sampler;
+
+			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writeDescriptorSets[i].dstSet = pipeline->vkDescriptorSets[i];
+			writeDescriptorSets[i].dstBinding = pipeline->descriptorSets[i].binding;
+			writeDescriptorSets[i].dstArrayElement = 0;
+			writeDescriptorSets[i].descriptorCount = 1;
+			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writeDescriptorSets[i].pImageInfo = &imageInfo;
+		} else if (usage == KGFX_DESCRIPTOR_USAGE_INVALID) {
+			return KGFX_SUCCESS;
+		}
+	}
+
+	vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
+	return KGFX_SUCCESS;
+}
+
 KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
 	if (pipeline->descriptorSets.size() < binding) {
 		DEBUG_OUT("Invalid binding");
@@ -2112,43 +2340,17 @@ KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline,
 	uniformBuffer->buffer = buffer;
 	uniformBuffer->binding = binding;
 	uniformBuffer->offset = offset;
+
+	descriptorSet.binding = binding;
 	descriptorSet.desc = reinterpret_cast<void*>(uniformBuffer);
+	descriptorSet.usage = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER;
 	pipeline->descriptorSets[binding] = descriptorSet;
 
-	std::vector<VkWriteDescriptorSet> writeDescriptorSets(pipeline->descriptorSets.size());
-	for (u32 i = 0; i < pipeline->descriptorSets.size(); ++i) {
-		KGFXdescriptorusage usage = pipeline->descriptorSets[i].usage;
-		if (usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
-			KGFXuniformbuffer ubuf = reinterpret_cast<KGFXuniformbuffer>(pipeline->descriptorSets[i].desc);
-			VkDescriptorBufferInfo bufferInfo = {};
-			bufferInfo.buffer = ubuf->buffer->buffer;
-			bufferInfo.offset = ubuf->offset;
-			bufferInfo.range = ubuf->buffer->size;
-
-			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[i].dstSet = pipeline->vkDescriptorSets[i];
-			writeDescriptorSets[i].dstBinding = binding;
-			writeDescriptorSets[i].dstArrayElement = 0;
-			writeDescriptorSets[i].descriptorCount = 1;
-			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[i].pBufferInfo = &bufferInfo;
-		} else {
-			DEBUG_OUT("not implemented yet");
-			delete uniformBuffer;
-			return KGFX_HANDLE_NULL;
-		}
+	if (pipelineUpdateDescriptorSets(pipeline) != KGFX_SUCCESS) {
+		delete uniformBuffer;
+		return KGFX_HANDLE_NULL;
 	}
-
-	vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 	return uniformBuffer;
-}
-
-KGFXtexture Vulkan::createTexture(KGFXtexturedesc textureDesc) {
-	return KGFX_HANDLE_NULL;
-}
-
-void Vulkan::destroyTexture(KGFXtexture texture) {
-
 }
 
 void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
@@ -2160,6 +2362,245 @@ void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXunifor
 
 	pipeline->descriptorSets[id].desc = nullptr;
 	delete uniformBuffer;
+}
+
+KGFXpipelinetexture Vulkan::pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
+	if (pipeline->descriptorSets.size() < binding) {
+		DEBUG_OUT("Invalid binding");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipeline->descriptorSets[binding].desc != nullptr) {
+		DEBUG_OUT("not implemented yet");
+		return KGFX_HANDLE_NULL;
+		//pipelineUnbindDescriptorSetBuffer(pipeline, pipeline->descriptorSets[binding].desc);
+	}
+
+	KGFXpipelinetexture pipelineTexture = new KGFXpipelinetexture_t;
+	pipelineTexture->id = binding;
+	pipelineTexture->imageView = texture->view;
+	pipelineTexture->sampler = sampler->sampler;
+
+	KGFXdescriptorset_t descriptorSet = {};
+	descriptorSet.binding = binding;
+	descriptorSet.desc = reinterpret_cast<void*>(pipelineTexture);
+	descriptorSet.usage = KGFX_DESCRIPTOR_USAGE_TEXTURE;
+	pipeline->descriptorSets[binding] = descriptorSet;
+
+	if (pipelineUpdateDescriptorSets(pipeline) != KGFX_SUCCESS) {
+		delete pipelineTexture;
+		return KGFX_HANDLE_NULL;
+	}
+	return pipelineTexture;
+}
+
+void Vulkan::pipelineUnbindDescriptorSetTexture(KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture) {
+	u32 id = pipelineTexture->id;
+	if (id >= pipeline->descriptorSets.size()) {
+		DEBUG_OUT("Invalid KGFXdescriptorset");
+		return;
+	}
+
+	pipeline->descriptorSets[id].desc = nullptr;
+	delete pipelineTexture;
+}
+
+KGFXtexture Vulkan::createTexture(KGFXtexturedesc textureDesc) {
+	KGFXtexture texture = new KGFXtexture_t;
+	texture->image = VK_NULL_HANDLE;
+	texture->view = VK_NULL_HANDLE;
+	texture->extent = { textureDesc.width, textureDesc.height, textureDesc.depth };
+	texture->format = textureFormatVkFormat(textureDesc.format);
+	texture->memory = VK_NULL_HANDLE;
+
+	VkImageCreateInfo imageCreateInfo = {};
+	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageCreateInfo.imageType = (texture->extent.depth != 0) ? VK_IMAGE_TYPE_3D : (texture->extent.height != 0) ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_1D;
+	imageCreateInfo.extent = texture->extent;
+	imageCreateInfo.mipLevels = 1;
+	imageCreateInfo.arrayLayers = 1;
+	imageCreateInfo.format = texture->format;
+	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+	VkResult res = vkCreateImage(device, &imageCreateInfo, nullptr, &texture->image);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create VkImage");
+		delete texture;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkMemoryRequirements memoryRequirements;
+	vkGetImageMemoryRequirements(device, texture->image, &memoryRequirements);
+
+	VkMemoryAllocateInfo memoryAllocateInfo = {};
+	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	memoryAllocateInfo.allocationSize = memoryRequirements.size;
+	memoryAllocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	res = vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &texture->memory);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkDeviceMemory");
+		vkDestroyImage(device, texture->image, nullptr);
+		delete texture;
+		return KGFX_HANDLE_NULL;
+	}
+
+	res = vkBindImageMemory(device, texture->image, texture->memory, 0);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to bind VkImage to VkDeviceMemory");
+		vkFreeMemory(device, texture->memory, nullptr);
+		vkDestroyImage(device, texture->image, nullptr);
+		delete texture;
+		return KGFX_HANDLE_NULL;
+	}
+
+	VkImageViewCreateInfo imageViewCreateInfo = {};
+	imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imageViewCreateInfo.image = texture->image;
+	imageViewCreateInfo.viewType = (texture->extent.depth != 0) ? VK_IMAGE_VIEW_TYPE_3D : (texture->extent.height != 0) ? VK_IMAGE_VIEW_TYPE_2D : VK_IMAGE_VIEW_TYPE_1D;
+	imageViewCreateInfo.format = texture->format;
+	imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+	imageViewCreateInfo.subresourceRange.levelCount = 1;
+	imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+	imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+	res = vkCreateImageView(device, &imageViewCreateInfo, nullptr, &texture->view);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create VkImageView");
+		vkFreeMemory(device, texture->memory, nullptr);
+		vkDestroyImage(device, texture->image, nullptr);
+		delete texture;
+		return KGFX_HANDLE_NULL;
+	}
+
+	return texture;
+}
+
+KGFXresult Vulkan::copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
+	VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+	commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	commandBufferAllocateInfo.commandPool = commandPool;
+	commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBufferAllocateInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	VkResult res = vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to allocate VkCommandBuffer");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+	commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	res = vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to begin recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkImageMemoryBarrier imageMemoryBarrier = {};
+	imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	imageMemoryBarrier.srcAccessMask = 0;
+	imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageMemoryBarrier.image = dstTexture->image;
+	imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
+	imageMemoryBarrier.subresourceRange.levelCount = 1;
+	imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
+	imageMemoryBarrier.subresourceRange.layerCount = 1;
+
+	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+
+	VkBufferImageCopy bufferImageCopy = {};
+	bufferImageCopy.bufferOffset = srcOffset;
+	bufferImageCopy.bufferRowLength = 0;
+	bufferImageCopy.bufferImageHeight = 0;
+	bufferImageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	bufferImageCopy.imageSubresource.mipLevel = 0;
+	bufferImageCopy.imageSubresource.baseArrayLayer = 0;
+	bufferImageCopy.imageSubresource.layerCount = 1;
+	bufferImageCopy.imageOffset = { 0, 0, 0 };
+	bufferImageCopy.imageExtent = dstTexture->extent;
+
+	vkCmdCopyBufferToImage(commandBuffer, srcBuffer->buffer, dstTexture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferImageCopy);
+
+	res = vkEndCommandBuffer(commandBuffer);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to end recording VkCommandBuffer");
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return KGFX_GENERIC_ERROR;
+	}
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 0;
+	submitInfo.pWaitSemaphores = nullptr;
+	submitInfo.pWaitDstStageMask = nullptr;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	submitInfo.signalSemaphoreCount = 0;
+	submitInfo.pSignalSemaphores = nullptr;
+
+	vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(transferQueue);
+
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+	return KGFX_SUCCESS;
+}
+
+void Vulkan::destroyTexture(KGFXtexture texture) {
+	vkDeviceWaitIdle(device);
+	vkDestroyImageView(device, texture->view, nullptr);
+	vkDestroyImage(device, texture->image, nullptr);
+	vkFreeMemory(device, texture->memory, nullptr);
+	delete texture;
+}
+
+KGFXsampler Vulkan::createSampler(KGFXsamplerdesc samplerDesc) {
+	KGFXsampler sampler = new KGFXsampler_t;
+
+	VkSamplerCreateInfo samplerCreateInfo = {};
+	samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	samplerCreateInfo.magFilter = samplerFilterVkFilter(samplerDesc.magFilter);
+	samplerCreateInfo.minFilter = samplerFilterVkFilter(samplerDesc.minFilter);
+	samplerCreateInfo.mipmapMode = samplerFilterVkMipmapMode(samplerDesc.mipmapMode);
+	samplerCreateInfo.addressModeU = samplerAddressModeVkSamplerAddressMode(samplerDesc.addressModeU);
+	samplerCreateInfo.addressModeV = samplerAddressModeVkSamplerAddressMode(samplerDesc.addressModeV);
+	samplerCreateInfo.addressModeW = samplerAddressModeVkSamplerAddressMode(samplerDesc.addressModeW);
+	samplerCreateInfo.mipLodBias = 1.0f;
+	samplerCreateInfo.anisotropyEnable = VK_TRUE;
+	samplerCreateInfo.maxAnisotropy = physicalDeviceProperties.limits.maxSamplerAnisotropy;
+	samplerCreateInfo.compareEnable = VK_TRUE;
+	samplerCreateInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+	samplerCreateInfo.minLod = 0.0f;
+	samplerCreateInfo.maxLod = 0.0f;
+	samplerCreateInfo.unnormalizedCoordinates = VK_FALSE;
+
+	VkResult res = vkCreateSampler(device, &samplerCreateInfo, nullptr, &sampler->sampler);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create VkSampler");
+		delete sampler;
+		return KGFX_HANDLE_NULL;
+	}
+
+	return sampler;
+}
+
+void Vulkan::destroySampler(KGFXsampler sampler) {
+	vkDestroySampler(device, sampler->sampler, nullptr);
+	delete sampler;
 }
 
 static void debugFuncConcat(std::stringstream& stream, std::string& format) {

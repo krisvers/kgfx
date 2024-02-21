@@ -3,6 +3,9 @@
 #include <GLFW/glfw3native.h>
 #include <linmath.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -121,15 +124,18 @@ int main(int argc, char** argv) {
 
 	KGFXdatatype descriptorSetType = KGFX_DATATYPE_MAT4;
 
-	KGFXdescriptorsetdesc descriptorSetDesc;
-	descriptorSetDesc.bindpoint = KGFX_BINDPOINT_VERTEX;
-	descriptorSetDesc.binding = 0;
-	descriptorSetDesc.usage = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER;
+	KGFXdescriptorsetdesc descriptorSetDescs[2];
+	descriptorSetDescs[0].bindpoint = KGFX_BINDPOINT_VERTEX;
+	descriptorSetDescs[0].binding = 0;
+	descriptorSetDescs[0].usage = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER;
+	descriptorSetDescs[1].bindpoint = KGFX_BINDPOINT_FRAGMENT;
+	descriptorSetDescs[1].binding = 1;
+	descriptorSetDescs[1].usage = KGFX_DESCRIPTOR_USAGE_TEXTURE;
 
 	pipelineDesc.layout.pBindings = &binding;
 	pipelineDesc.layout.bindingCount = 1;
-	pipelineDesc.layout.pDescriptorSets = &descriptorSetDesc;
-	pipelineDesc.layout.descriptorSetCount = 1;
+	pipelineDesc.layout.pDescriptorSets = descriptorSetDescs;
+	pipelineDesc.layout.descriptorSetCount = 2;
 
 	KGFXpipeline pipeline = kgfxCreatePipeline(ctx, pipelineDesc);
 	if (pipeline == KGFX_HANDLE_NULL) {
@@ -139,9 +145,9 @@ int main(int argc, char** argv) {
 	kgfxDestroyShader(ctx, fshader);
 
 	f32 vertices[] = {
-		 0.5f,  0.5f,	1, 1, 0,
-		-0.5f,  0.5f,	1, 0, 1,
-		 0.0f, -0.5f,	0, 1, 1,
+		 0.5f,  0.5f,	1, 0, 0,
+		-0.5f,  0.5f,	0, 0, 0,
+		 0.0f, -0.5f,	0.5f, 1, 0,
 	};
 
 	KGFXbufferdesc bufferDesc;
@@ -185,6 +191,10 @@ int main(int argc, char** argv) {
 	});
 
 	KGFXuniformbuffer uniformBuffer = kgfxPipelineBindDescriptorSetBuffer(ctx, pipeline, uBuffer, 0, 0);
+	if (uniformBuffer == KGFX_HANDLE_NULL) {
+		printf("failed to bind uniform buffer\n");
+		return 1;
+	}
 
 	void* mapped = kgfxBufferMap(ctx, uBuffer);
 	if (mapped == NULL) {
@@ -194,6 +204,63 @@ int main(int argc, char** argv) {
 	memcpy(mapped, matrixData, sizeof(f32) * 16);
 	kgfxBufferUnmap(ctx, uBuffer);
 
+	int textureWidth, textureHeight;
+	u8* textureData = stbi_load("assets/texture.png", &textureWidth, &textureHeight, NULL, 4);
+	if (textureData == NULL) {
+		printf("failed to load texture\n");
+		return 1;
+	}
+
+	KGFXtexturedesc textureDesc;
+	textureDesc.format = KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM;
+	textureDesc.width = textureWidth;
+	textureDesc.height = textureHeight;
+	textureDesc.depth = 1;
+
+	KGFXtexture texture = kgfxCreateTexture(ctx, textureDesc);
+	if (texture == KGFX_HANDLE_NULL) {
+		printf("failed to create texture\n");
+		return 1;
+	}
+
+	KGFXbufferdesc textureBufferDesc;
+	textureBufferDesc.location = KGFX_BUFFER_LOCATION_GPU;
+	textureBufferDesc.usage = KGFX_BUFFER_USAGE_TEXTURE_SRC;
+	textureBufferDesc.size = textureWidth * textureHeight * 4;
+	textureBufferDesc.pData = textureData;
+
+	KGFXbuffer textureBuffer = kgfxCreateBuffer(ctx, textureBufferDesc);
+	if (textureBuffer == KGFX_HANDLE_NULL) {
+		printf("failed to create texture buffer\n");
+		return 1;
+	}
+
+	stbi_image_free(textureData);
+	if (kgfxCopyBufferToTexture(ctx, texture, textureBuffer, 0) != KGFX_SUCCESS) {
+		printf("failed to copy buffer to texture\n");
+		return 1;
+	}
+
+	KGFXsamplerdesc samplerDesc;
+	samplerDesc.magFilter = KGFX_SAMPLER_FILTER_NEAREST;
+	samplerDesc.minFilter = KGFX_SAMPLER_FILTER_NEAREST;
+	samplerDesc.mipmapMode = KGFX_SAMPLER_FILTER_NEAREST;
+	samplerDesc.addressModeU = KGFX_SAMPLER_ADDRESS_MODE_CLAMP;
+	samplerDesc.addressModeV = KGFX_SAMPLER_ADDRESS_MODE_CLAMP;
+	samplerDesc.addressModeW = KGFX_SAMPLER_ADDRESS_MODE_CLAMP;
+
+	KGFXsampler sampler = kgfxCreateSampler(ctx, samplerDesc);
+	if (sampler == KGFX_HANDLE_NULL) {
+		printf("failed to create sampler\n");
+		return 1;
+	}
+
+	KGFXpipelinetexture pipelineTexture = kgfxPipelineBindDescriptorSetTexture(ctx, pipeline, texture, sampler, 1, 0);
+	if (pipelineTexture == KGFX_HANDLE_NULL) {
+		printf("failed to bind texture\n");
+		return 1;
+	}
+
 	while (!glfwWindowShouldClose(window)) {
 		kgfxRender(ctx, pipeline);
 		glfwSwapBuffers(window);
@@ -201,6 +268,14 @@ int main(int argc, char** argv) {
 	}
 
 	printf("objects for krunching and destruktion\n");
+	kgfxPipelineUnbindDescriptorSetTexture(ctx, pipeline, pipelineTexture);
+	kgfxDestroySampler(ctx, sampler);
+	kgfxDestroyBuffer(ctx, textureBuffer);
+	kgfxDestroyTexture(ctx, texture);
+	kgfxPipelineRemoveMesh(ctx, pipeline, pipelinemesh);
+	kgfxPipelineUnbindDescriptorSetBuffer(ctx, pipeline, uniformBuffer);
+	kgfxDestroyBuffer(ctx, uBuffer);
+	kgfxDestroyMesh(ctx, mesh);
 	kgfxDestroyBuffer(ctx, buffer);
 	kgfxDestroyPipeline(ctx, pipeline);
 	kgfxDestroyContext(ctx);
