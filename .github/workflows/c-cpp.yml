@@ -14,6 +14,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: install dependencies
-      run: sudo apt-get install libglfw libglfw-dev libvulkan-1
+      run: sudo apt-get install libglfw3 libglfw3-dev libvulkan1 libvulkan-dev
     - name: make linux-vulkan
       run: make linux-vulkan
