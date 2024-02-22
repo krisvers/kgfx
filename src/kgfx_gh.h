@@ -3,7 +3,7 @@
 
 #include "kgfx/kgfx.h"
 
-#define GLFW_NO_INCLUDES
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window);
