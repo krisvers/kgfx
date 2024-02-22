@@ -277,7 +277,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	KGFXpipelinetexture pipelineTexture = kgfxPipelineBindDescriptorSetTexture(ctx, pipeline, texture, sampler, 1, 0);
+	KGFXpipelinetexture pipelineTexture = kgfxPipelineBindDescriptorSetTexture(ctx, pipeline, texture, sampler, 1);
 	if (pipelineTexture == KGFX_HANDLE_NULL) {
 		printf("failed to bind texture\n");
 		return 1;

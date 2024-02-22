@@ -4,8 +4,8 @@ linux-vulkan:
 mac-vulkan:
 	clang -std=c99 -c src/main.c -o obj/main.o -Ilib/include
 	clang -c src/kgfx_gh_cocoa.m -o obj/kgfx_gh_cocoa.o -Ilib/include
-	clang++ -std=c++14 -c src/kgfx/kgfx_vulkan.cpp -o obj/kgfx_vulkan.o -Ilib/include
-	clang++ obj/main.o obj/kgfx_gh_cocoa.o obj/kgfx_vulkan.o -o kgfx -rpath lib/mac -Llib/mac -framework IOKit -framework Cocoa -framework QuartzCore -lMoltenVK -lglfw3 
+	clang++ -std=c++14 -c src/kgfx/kgfx_vulkan.cpp -o obj/kgfx_vulkan.o -Ilib/include -Wno-switch
+	clang++ obj/main.o obj/kgfx_gh_cocoa.o obj/kgfx_vulkan.o -o kgfx -rpath lib/mac -Llib/mac -framework IOKit -framework Cocoa -framework QuartzCore -lMoltenVK -lglfw3
 
 mac-metal:
 	clang -std=c99 -c src/main.c -o obj/main.o -Ilib/include

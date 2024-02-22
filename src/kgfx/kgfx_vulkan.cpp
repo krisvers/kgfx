@@ -155,6 +155,7 @@ struct KGFXpipeline_t {
 	std::vector<KGFXpipelinemesh> meshes;
 
 	std::vector<struct KGFXdescriptorset_t> descriptorSets;
+	bool allDescriptorSetsBound;
 };
 
 struct KGFXrenderpass_t {
@@ -1422,6 +1423,7 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 
 	KGFXpipeline pipeline = new KGFXpipeline_t;
 	pipeline->renderPass = renderPasses[0];
+	pipeline->allDescriptorSetsBound = false;
 
 	VkShaderStageFlagBits stageFlags[] = { VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT, VK_SHADER_STAGE_GEOMETRY_BIT, VK_SHADER_STAGE_COMPUTE_BIT };
 	VkDescriptorType descriptorTypes[] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
@@ -2273,57 +2275,88 @@ void Vulkan::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh pipeline
 }
 
 KGFXresult Vulkan::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
+	struct desc_image_with_binding_t {
+		VkDescriptorImageInfo imageInfo;
+		u32 binding;
+	};
+	struct desc_buffer_with_binding_t {
+		VkDescriptorBufferInfo bufferInfo;
+		u32 binding;
+	};
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets(pipeline->descriptorSets.size());
-	VkDescriptorImageInfo imageInfo = {};
-	VkDescriptorBufferInfo bufferInfo = {};
+	std::vector<desc_image_with_binding_t> imageInfos;
+	std::vector<desc_buffer_with_binding_t> bufferInfos;
+
 	for (u32 i = 0; i < pipeline->descriptorSets.size(); ++i) {
 		KGFXdescriptorusage usage = pipeline->descriptorSets[i].usage;
-		if (usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
+		if (usage == KGFX_DESCRIPTOR_USAGE_INVALID) {
+			return KGFX_SUCCESS;
+		} else if (usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
 			KGFXuniformbuffer ubuf = reinterpret_cast<KGFXuniformbuffer>(pipeline->descriptorSets[i].desc);
 			if (ubuf == nullptr) {
-				continue;
+				return KGFX_SUCCESS;
 			}
 
+			VkDescriptorBufferInfo bufferInfo = {};
 			bufferInfo.buffer = ubuf->buffer->buffer;
 			bufferInfo.offset = static_cast<VkDeviceSize>(ubuf->offset);
 			bufferInfo.range = static_cast<VkDeviceSize>(ubuf->buffer->size);
 
-			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[i].pNext = nullptr;
-			writeDescriptorSets[i].dstSet = pipeline->descriptorSet;
-			writeDescriptorSets[i].dstBinding = pipeline->descriptorSets[i].binding;
-			writeDescriptorSets[i].dstArrayElement = 0;
-			writeDescriptorSets[i].descriptorCount = 1;
-			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[i].pBufferInfo = &bufferInfo;
-			writeDescriptorSets[i].pImageInfo = nullptr;
-			writeDescriptorSets[i].pTexelBufferView = nullptr;
+			desc_buffer_with_binding_t desc = {};
+			desc.bufferInfo = bufferInfo;
+			desc.binding = pipeline->descriptorSets[i].binding;
+			bufferInfos.push_back(desc);
 		} else if (usage == KGFX_DESCRIPTOR_USAGE_TEXTURE) {
 			KGFXpipelinetexture ptexture = reinterpret_cast<KGFXpipelinetexture>(pipeline->descriptorSets[i].desc);
 			if (ptexture == nullptr) {
-				continue;
+				return KGFX_SUCCESS;
 			}
 
+			VkDescriptorImageInfo imageInfo;
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageInfo.imageView = ptexture->imageView;
 			imageInfo.sampler = ptexture->sampler;
 
-			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[i].pNext = nullptr;
-			writeDescriptorSets[i].dstSet = pipeline->descriptorSet;
-			writeDescriptorSets[i].dstBinding = pipeline->descriptorSets[i].binding;
-			writeDescriptorSets[i].dstArrayElement = 0;
-			writeDescriptorSets[i].descriptorCount = 1;
-			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writeDescriptorSets[i].pBufferInfo = nullptr;
-			writeDescriptorSets[i].pImageInfo = &imageInfo;
-			writeDescriptorSets[i].pTexelBufferView = nullptr;
-		} else if (usage == KGFX_DESCRIPTOR_USAGE_INVALID) {
+			desc_image_with_binding_t desc = {};
+			desc.imageInfo = imageInfo;
+			desc.binding = pipeline->descriptorSets[i].binding;
+			imageInfos.push_back(desc);
+		} else {
 			return KGFX_SUCCESS;
 		}
 	}
+	
+	u32 descIndex = 0;
+	for (desc_image_with_binding_t& info : imageInfos) {
+		writeDescriptorSets[descIndex].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[descIndex].pNext = nullptr;
+		writeDescriptorSets[descIndex].dstSet = pipeline->descriptorSet;
+		writeDescriptorSets[descIndex].dstBinding = info.binding;
+		writeDescriptorSets[descIndex].dstArrayElement = 0;
+		writeDescriptorSets[descIndex].descriptorCount = 1;
+		writeDescriptorSets[descIndex].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		writeDescriptorSets[descIndex].pBufferInfo = nullptr;
+		writeDescriptorSets[descIndex].pImageInfo = &info.imageInfo;
+		writeDescriptorSets[descIndex].pTexelBufferView = nullptr;
+		++descIndex;
+	}
+
+	for (desc_buffer_with_binding_t& info : bufferInfos) {
+		writeDescriptorSets[descIndex].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[descIndex].pNext = nullptr;
+		writeDescriptorSets[descIndex].dstSet = pipeline->descriptorSet;
+		writeDescriptorSets[descIndex].dstBinding = info.binding;
+		writeDescriptorSets[descIndex].dstArrayElement = 0;
+		writeDescriptorSets[descIndex].descriptorCount = 1;
+		writeDescriptorSets[descIndex].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		writeDescriptorSets[descIndex].pBufferInfo = &info.bufferInfo;
+		writeDescriptorSets[descIndex].pImageInfo = nullptr;
+		writeDescriptorSets[descIndex].pTexelBufferView = nullptr;
+		++descIndex;
+	}
 
 	vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
+	pipeline->allDescriptorSetsBound = true;
 	return KGFX_SUCCESS;
 }
 

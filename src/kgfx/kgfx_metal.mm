@@ -61,6 +61,22 @@ struct KGFXpipelinemesh_t {
 	int temp;
 };
 
+struct KGFXtexture_t {
+	int temp;
+};
+
+struct KGFXsampler_t {
+	int temp;
+};
+
+struct KGFXuniformbuffer_t {
+	int temp;
+};
+
+struct KGFXpipelinetexture_t {
+	int temp;
+};
+
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
 	if (context == NULL) {
 		return KGFX_NULL_OUTPUT_ARGUMENT;
@@ -113,6 +129,22 @@ KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGF
 	return new KGFXpipelinemesh_t;
 }
 
+KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
+	return new KGFXuniformbuffer_t;
+}
+
+void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+	delete uniformBuffer;
+}
+
+KGFXpipelinetexture kgfxPipelineBindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
+	return new KGFXpipelinetexture_t;
+}
+
+void kgfxPipelineUnbindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture) {
+	delete pipelineTexture;
+}
+
 void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh) {
 	delete pipelineMesh;
 }
@@ -129,6 +161,14 @@ KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* 
 	return KGFX_SUCCESS;
 }
 
+void* kgfxBufferMap(KGFXcontext ctx, KGFXbuffer buffer) {
+	return nullptr;
+}
+
+void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer) {
+
+}
+
 void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
 	delete buffer;
 }
@@ -139,6 +179,26 @@ KGFXmesh kgfxCreateMesh(KGFXcontext ctx, KGFXmeshdesc meshDesc) {
 
 void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh) {
 	delete mesh;
+}
+
+KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
+	return new KGFXtexture_t;
+}
+
+KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
+	return KGFX_SUCCESS;
+}
+
+void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
+	delete texture;
+}
+
+KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc) {
+	return new KGFXsampler_t;
+}
+
+void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler) {
+	delete sampler;
 }
 
 void kgfxRender(KGFXcontext ctx, KGFXpipeline pipeline) {
