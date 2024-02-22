@@ -161,14 +161,36 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	u32 indices[] = {
+		0, 1, 2,
+	};
+
+	KGFXbufferdesc indexBufferDesc;
+	indexBufferDesc.location = KGFX_BUFFER_LOCATION_GPU;
+	indexBufferDesc.usage = KGFX_BUFFER_USAGE_INDEX_BUFFER;
+	indexBufferDesc.size = sizeof(indices);
+	indexBufferDesc.pData = indices;
+
+	KGFXbuffer indexBuffer = kgfxCreateBuffer(ctx, indexBufferDesc);
+	if (indexBuffer == KGFX_HANDLE_NULL) {
+		return 1;
+	}
+
 	KGFXmeshbuffer meshBuffer;
 	meshBuffer.buffer = buffer;
 	meshBuffer.bindpoint = KGFX_MESH_BUFFER_BINDPOINT_VERTEX;
 	meshBuffer.offset = 0;
 
+	KGFXmeshbuffer indexMeshBuffer;
+	indexMeshBuffer.buffer = indexBuffer;
+	indexMeshBuffer.bindpoint = KGFX_MESH_BUFFER_BINDPOINT_INDEX;
+	indexMeshBuffer.offset = 0;
+
+	KGFXmeshbuffer meshBuffers[] = { meshBuffer, indexMeshBuffer };
+
 	KGFXmeshdesc meshDesc;
-	meshDesc.pBuffers = &meshBuffer;
-	meshDesc.bufferCount = 1;
+	meshDesc.pBuffers = meshBuffers;
+	meshDesc.bufferCount = 2;
 	KGFXmesh mesh = kgfxCreateMesh(ctx, meshDesc);
 	if (mesh == KGFX_HANDLE_NULL) {
 		return 1;
@@ -215,7 +237,7 @@ int main(int argc, char** argv) {
 	textureDesc.format = KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM;
 	textureDesc.width = textureWidth;
 	textureDesc.height = textureHeight;
-	textureDesc.depth = 1;
+	textureDesc.depth = 0;
 
 	KGFXtexture texture = kgfxCreateTexture(ctx, textureDesc);
 	if (texture == KGFX_HANDLE_NULL) {
@@ -276,6 +298,7 @@ int main(int argc, char** argv) {
 	kgfxPipelineUnbindDescriptorSetBuffer(ctx, pipeline, uniformBuffer);
 	kgfxDestroyBuffer(ctx, uBuffer);
 	kgfxDestroyMesh(ctx, mesh);
+	kgfxDestroyBuffer(ctx, indexBuffer);
 	kgfxDestroyBuffer(ctx, buffer);
 	kgfxDestroyPipeline(ctx, pipeline);
 	kgfxDestroyContext(ctx);

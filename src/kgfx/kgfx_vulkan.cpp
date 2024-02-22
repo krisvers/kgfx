@@ -4,9 +4,8 @@
 
 #ifndef NDEBUG
 #define KGFX_DEBUG
-#endif
-
 #define KGFX_VALIDATION
+#endif
 
 #ifdef KGFX_WINDOWS
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -150,7 +149,7 @@ struct KGFXpipeline_t {
 	KGFXrenderpass renderPass;
 	VkDescriptorSetLayout descriptorSetLayout;
 	VkDescriptorPool descriptorPool;
-	std::vector<VkDescriptorSet> vkDescriptorSets;
+	VkDescriptorSet descriptorSet;
 
 	u32 vertexStride;
 	std::vector<KGFXpipelinemesh> meshes;
@@ -1029,7 +1028,7 @@ void Vulkan::render(KGFXpipeline pipeline) {
 	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0, pipeline->vkDescriptorSets.size(), pipeline->vkDescriptorSets.data(), 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0, 1, &pipeline->descriptorSet, 0, nullptr);
 
 	VkDeviceSize offset = 0;
 	for (KGFXpipelinemesh& pipelineMesh : pipeline->meshes) {
@@ -1449,14 +1448,17 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
+	VkDescriptorPoolSize poolSizes[2];
+	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizes[0].descriptorCount = 1;
+	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	poolSizes[1].descriptorCount = 1;
+
 	VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
 	descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	descriptorPoolCreateInfo.maxSets = pipelineDesc.layout.descriptorSetCount;
-	descriptorPoolCreateInfo.poolSizeCount = 1;
-	VkDescriptorPoolSize poolSize = {};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = pipelineDesc.layout.descriptorSetCount;
-	descriptorPoolCreateInfo.pPoolSizes = &poolSize;
+	descriptorPoolCreateInfo.maxSets = 1;
+	descriptorPoolCreateInfo.poolSizeCount = 2;
+	descriptorPoolCreateInfo.pPoolSizes = poolSizes;
 
 	res = vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &pipeline->descriptorPool);
 	if (res != VK_SUCCESS) {
@@ -1466,16 +1468,13 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
-	std::vector<VkDescriptorSetLayout> descriptorSetLayouts(pipelineDesc.layout.descriptorSetCount, pipeline->descriptorSetLayout);
-
 	VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = {};
 	descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	descriptorSetAllocateInfo.descriptorPool = pipeline->descriptorPool;
-	descriptorSetAllocateInfo.descriptorSetCount = pipelineDesc.layout.descriptorSetCount;
-	descriptorSetAllocateInfo.pSetLayouts = descriptorSetLayouts.data();
+	descriptorSetAllocateInfo.descriptorSetCount = 1;
+	descriptorSetAllocateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
 
-	pipeline->vkDescriptorSets.resize(pipelineDesc.layout.descriptorSetCount);
-	res = vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, pipeline->vkDescriptorSets.data());
+	res = vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &pipeline->descriptorSet);
 	if (res != VK_SUCCESS) {
 		DEBUG_OUT("Failed to allocate VkDescriptorSets");
 		vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
@@ -1492,8 +1491,8 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
 	pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutCreateInfo.setLayoutCount = pipelineDesc.layout.descriptorSetCount;
-	pipelineLayoutCreateInfo.pSetLayouts = descriptorSetLayouts.data();
+	pipelineLayoutCreateInfo.setLayoutCount = 1;
+	pipelineLayoutCreateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
 	pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 
@@ -2275,6 +2274,8 @@ void Vulkan::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh pipeline
 
 KGFXresult Vulkan::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets(pipeline->descriptorSets.size());
+	VkDescriptorImageInfo imageInfo = {};
+	VkDescriptorBufferInfo bufferInfo = {};
 	for (u32 i = 0; i < pipeline->descriptorSets.size(); ++i) {
 		KGFXdescriptorusage usage = pipeline->descriptorSets[i].usage;
 		if (usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
@@ -2283,36 +2284,40 @@ KGFXresult Vulkan::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
 				continue;
 			}
 
-			VkDescriptorBufferInfo bufferInfo = {};
 			bufferInfo.buffer = ubuf->buffer->buffer;
-			bufferInfo.offset = ubuf->offset;
-			bufferInfo.range = ubuf->buffer->size;
+			bufferInfo.offset = static_cast<VkDeviceSize>(ubuf->offset);
+			bufferInfo.range = static_cast<VkDeviceSize>(ubuf->buffer->size);
 
 			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[i].dstSet = pipeline->vkDescriptorSets[i];
+			writeDescriptorSets[i].pNext = nullptr;
+			writeDescriptorSets[i].dstSet = pipeline->descriptorSet;
 			writeDescriptorSets[i].dstBinding = pipeline->descriptorSets[i].binding;
 			writeDescriptorSets[i].dstArrayElement = 0;
 			writeDescriptorSets[i].descriptorCount = 1;
 			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			writeDescriptorSets[i].pBufferInfo = &bufferInfo;
+			writeDescriptorSets[i].pImageInfo = nullptr;
+			writeDescriptorSets[i].pTexelBufferView = nullptr;
 		} else if (usage == KGFX_DESCRIPTOR_USAGE_TEXTURE) {
 			KGFXpipelinetexture ptexture = reinterpret_cast<KGFXpipelinetexture>(pipeline->descriptorSets[i].desc);
 			if (ptexture == nullptr) {
 				continue;
 			}
 
-			VkDescriptorImageInfo imageInfo = {};
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageInfo.imageView = ptexture->imageView;
 			imageInfo.sampler = ptexture->sampler;
 
 			writeDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[i].dstSet = pipeline->vkDescriptorSets[i];
+			writeDescriptorSets[i].pNext = nullptr;
+			writeDescriptorSets[i].dstSet = pipeline->descriptorSet;
 			writeDescriptorSets[i].dstBinding = pipeline->descriptorSets[i].binding;
 			writeDescriptorSets[i].dstArrayElement = 0;
 			writeDescriptorSets[i].descriptorCount = 1;
 			writeDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writeDescriptorSets[i].pBufferInfo = nullptr;
 			writeDescriptorSets[i].pImageInfo = &imageInfo;
+			writeDescriptorSets[i].pTexelBufferView = nullptr;
 		} else if (usage == KGFX_DESCRIPTOR_USAGE_INVALID) {
 			return KGFX_SUCCESS;
 		}
@@ -2412,11 +2417,12 @@ KGFXtexture Vulkan::createTexture(KGFXtexturedesc textureDesc) {
 	texture->extent = { textureDesc.width, textureDesc.height, textureDesc.depth };
 	texture->format = textureFormatVkFormat(textureDesc.format);
 	texture->memory = VK_NULL_HANDLE;
-
+	
+	VkExtent3D extent = { textureDesc.width, (textureDesc.height == 0) ? 1 : textureDesc.height, (textureDesc.depth == 0) ? 1 : textureDesc.depth };
 	VkImageCreateInfo imageCreateInfo = {};
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageCreateInfo.imageType = (texture->extent.depth != 0) ? VK_IMAGE_TYPE_3D : (texture->extent.height != 0) ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_1D;
-	imageCreateInfo.extent = texture->extent;
+	imageCreateInfo.extent = extent;
 	imageCreateInfo.mipLevels = 1;
 	imageCreateInfo.arrayLayers = 1;
 	imageCreateInfo.format = texture->format;
@@ -2522,7 +2528,8 @@ KGFXresult Vulkan::copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuf
 	imageMemoryBarrier.subresourceRange.layerCount = 1;
 
 	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-
+	
+	VkExtent3D extent = { dstTexture->extent.width, (dstTexture->extent.height == 0) ? 1 : dstTexture->extent.height, (dstTexture->extent.depth == 0) ? 1 : dstTexture->extent.depth };
 	VkBufferImageCopy bufferImageCopy = {};
 	bufferImageCopy.bufferOffset = srcOffset;
 	bufferImageCopy.bufferRowLength = 0;
@@ -2532,9 +2539,25 @@ KGFXresult Vulkan::copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuf
 	bufferImageCopy.imageSubresource.baseArrayLayer = 0;
 	bufferImageCopy.imageSubresource.layerCount = 1;
 	bufferImageCopy.imageOffset = { 0, 0, 0 };
-	bufferImageCopy.imageExtent = dstTexture->extent;
+	bufferImageCopy.imageExtent = extent;
 
 	vkCmdCopyBufferToImage(commandBuffer, srcBuffer->buffer, dstTexture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferImageCopy);
+
+	imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageMemoryBarrier.image = dstTexture->image;
+	imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
+	imageMemoryBarrier.subresourceRange.levelCount = 1;
+	imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
+	imageMemoryBarrier.subresourceRange.layerCount = 1;
+
+	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
 
 	res = vkEndCommandBuffer(commandBuffer);
 	if (res != VK_SUCCESS) {
@@ -2599,6 +2622,7 @@ KGFXsampler Vulkan::createSampler(KGFXsamplerdesc samplerDesc) {
 }
 
 void Vulkan::destroySampler(KGFXsampler sampler) {
+	vkDeviceWaitIdle(device);
 	vkDestroySampler(device, sampler->sampler, nullptr);
 	delete sampler;
 }
