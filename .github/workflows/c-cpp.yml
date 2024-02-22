@@ -13,5 +13,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: install dependencies
+      run: sudo apt-get install libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev
     - name: make linux-vulkan
       run: make linux-vulkan
