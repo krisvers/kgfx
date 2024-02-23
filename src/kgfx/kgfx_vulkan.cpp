@@ -74,10 +74,12 @@ struct Vulkan {
 	u32 graphicsQueueIndex;
 	u32 presentQueueIndex;
 	u32 transferQueueIndex;
+	u32 computeQueueIndex;
 
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 	VkQueue transferQueue;
+	VkQueue computeQueue;
 
 	KGFXcontext ctx;
 
@@ -94,6 +96,9 @@ struct Vulkan {
 	KGFXrenderpass createRenderPass();
 	VkResult createCommandUtilities();
 	VkResult createSyncUtilities();
+
+	VkExtent2D getWindowExtent();
+	VkResult recreateSwapchain();
 
 	KGFXbuffer createBuffer(KGFXbufferdesc bufferDesc);
 	KGFXresult uploadBuffer(KGFXbuffer buffer, u32 size, void* data);
@@ -978,16 +983,30 @@ void Vulkan::destroy() {
 }
 
 void Vulkan::render(KGFXpipeline pipeline) {
+	if (extent.width == 0 || extent.height == 0 || extent.width < surfaceCapabilities.minImageExtent.width || extent.height < surfaceCapabilities.minImageExtent.height || extent.width > surfaceCapabilities.maxImageExtent.width || extent.height > surfaceCapabilities.maxImageExtent.height) {
+		extent = getWindowExtent();
+		return;
+	}
 	vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, std::numeric_limits<u64>::max());
-	vkResetFences(device, 1, &inFlightFence);
 
 	u32 imageIndex;
 	VkResult res = vkAcquireNextImageKHR(device, swapchain, std::numeric_limits<u64>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-	if (res != VK_SUCCESS) {
+	if (res == VK_SUBOPTIMAL_KHR || res == VK_ERROR_OUT_OF_DATE_KHR) {
+		extent = getWindowExtent();
+		if (extent.width == 0 || extent.height == 0 || extent.width < surfaceCapabilities.minImageExtent.width || extent.height < surfaceCapabilities.minImageExtent.height || extent.width > surfaceCapabilities.maxImageExtent.width || extent.height > surfaceCapabilities.maxImageExtent.height) {
+			return;
+		}
+		res = recreateSwapchain();
+		if (res != VK_SUCCESS) {
+			DEBUG_OUT("Failed to recreate swapchain");
+		}
+		return;
+	} else if (res != VK_SUCCESS) {
 		DEBUG_OUT("Failed to acquire next image");
 		return;
 	}
-
+	
+	vkResetFences(device, 1, &inFlightFence);
 	vkResetCommandBuffer(commandBuffer, 0);
 
 	VkCommandBufferBeginInfo commandBufferBeginInfo = {};
@@ -1020,10 +1039,19 @@ void Vulkan::render(KGFXpipeline pipeline) {
 	renderingAttachmentInfo.imageView = swapchainImageViews[imageIndex];
 	renderingAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	renderingAttachmentInfo.clearValue = { { { 0, 0, 0, 1 } } };
+	renderingAttachmentInfo.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	renderingAttachmentInfo.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
 	pipeline->renderPass->renderingInfo.colorAttachmentCount = 1;
 	pipeline->renderPass->renderingInfo.pColorAttachments = &renderingAttachmentInfo;
+	pipeline->renderPass->renderingInfo.renderArea.extent = extent;
+	pipeline->renderPass->renderingInfo.renderArea.offset = { 0, 0 };
 	vkCmdBeginRendering(commandBuffer, &pipeline->renderPass->renderingInfo);
+
+	viewport.width = static_cast<f32>(extent.width);
+	viewport.height = static_cast<f32>(extent.height);
+
+	scissor.extent = extent;
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -1040,13 +1068,13 @@ void Vulkan::render(KGFXpipeline pipeline) {
 		if (pipelineMesh->mesh->indexBuffer != KGFX_HANDLE_NULL) {
 			offset = pipelineMesh->mesh->indexOffset;
 			vkCmdBindIndexBuffer(commandBuffer, pipelineMesh->mesh->indexBuffer->buffer, offset, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(commandBuffer, pipelineMesh->mesh->indexBuffer->size / sizeof(u32), 1, 0, pipelineMesh->mesh->vertexOffset, 0);
+			vkCmdDrawIndexed(commandBuffer, static_cast<u32>(pipelineMesh->mesh->indexBuffer->size / sizeof(u32)), 1, 0, pipelineMesh->mesh->vertexOffset, 0);
 		} else {
 			if (pipelineMesh->mesh->vertexBuffer == KGFX_HANDLE_NULL) {
 				DEBUG_OUT("[warning]: No vertex or index buffer provided for pipeline mesh");
 				continue;
 			}
-			vkCmdDraw(commandBuffer, pipelineMesh->mesh->vertexBuffer->size / pipeline->vertexStride, 1, pipelineMesh->mesh->vertexOffset, 0);
+			vkCmdDraw(commandBuffer, static_cast<u32>(pipelineMesh->mesh->vertexBuffer->size / pipeline->vertexStride), 1, pipelineMesh->mesh->vertexOffset, 0);
 		}
 	}
 
@@ -1098,7 +1126,13 @@ void Vulkan::render(KGFXpipeline pipeline) {
 	presentInfo.pImageIndices = &imageIndex;
 
 	res = vkQueuePresentKHR(presentQueue, &presentInfo);
-	if (res != VK_SUCCESS) {
+	if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+		res = recreateSwapchain();
+		if (res != VK_SUCCESS) {
+			DEBUG_OUT("Failed to recreate swapchain");
+		}
+		return;
+	} else if (res != VK_SUCCESS) {
 		DEBUG_OUT("Failed to present image");
 	}
 
@@ -1216,6 +1250,7 @@ VkResult Vulkan::selectQueueIndices() {
 	graphicsQueueIndex = std::numeric_limits<u32>::max();
 	presentQueueIndex = std::numeric_limits<u32>::max();
 	transferQueueIndex = std::numeric_limits<u32>::max();
+	computeQueueIndex = std::numeric_limits<u32>::max();
 
 	for (uint32_t i = 0; i < queueFamilies.size(); ++i) {
 		if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
@@ -1226,6 +1261,10 @@ VkResult Vulkan::selectQueueIndices() {
 			transferQueueIndex = i;
 		}
 
+		if (queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+			computeQueueIndex = i;
+		}
+
 		VkBool32 present = VK_FALSE;
 		vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &present);
 
@@ -1233,12 +1272,12 @@ VkResult Vulkan::selectQueueIndices() {
 			presentQueueIndex = i;
 		}
 
-		if (graphicsQueueIndex != std::numeric_limits<u32>::max() && presentQueueIndex != std::numeric_limits<u32>::max() && transferQueueIndex != std::numeric_limits<u32>::max()) {
+		if (graphicsQueueIndex != std::numeric_limits<u32>::max() && presentQueueIndex != std::numeric_limits<u32>::max() && transferQueueIndex != std::numeric_limits<u32>::max() && computeQueueIndex != std::numeric_limits<u32>::max()) {
 			break;
 		}
 	}
 
-	if (graphicsQueueIndex == std::numeric_limits<u32>::max() || presentQueueIndex == std::numeric_limits<u32>::max() || transferQueueIndex == std::numeric_limits<u32>::max()) {
+	if (graphicsQueueIndex == std::numeric_limits<u32>::max() || presentQueueIndex == std::numeric_limits<u32>::max() || transferQueueIndex == std::numeric_limits<u32>::max() || computeQueueIndex == std::numeric_limits<u32>::max()) {
 		DEBUG_OUT("Failed to select queue indices");
 		return VK_ERROR_INITIALIZATION_FAILED;
 	}
@@ -1278,6 +1317,15 @@ VkResult Vulkan::createDevice() {
 		});
 	}
 
+	if (graphicsQueueIndex != computeQueueIndex && presentQueueIndex != computeQueueIndex && transferQueueIndex != computeQueueIndex) {
+		queueCreateInfos.push_back({
+			VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			nullptr, 0,
+			computeQueueIndex, 1,
+			&priority,
+		});
+	}
+
 	createInfo.pQueueCreateInfos = queueCreateInfos.data();
 	createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
 	createInfo.enabledExtensionCount = 1;
@@ -1303,10 +1351,13 @@ VkResult Vulkan::createDevice() {
 	vkGetDeviceQueue(device, graphicsQueueIndex, 0, &graphicsQueue);
 	vkGetDeviceQueue(device, presentQueueIndex, 0, &presentQueue);
 	vkGetDeviceQueue(device, transferQueueIndex, 0, &transferQueue);
+	vkGetDeviceQueue(device, computeQueueIndex, 0, &computeQueue);
 	return res;
 }
 
 VkResult Vulkan::createSwapchain() {
+	extent = getWindowExtent();
+
 	if (surfaceCapabilities.maxImageCount == 0) {
 		swapchainImageCount = std::max(static_cast<u32>(KGFX_VK_TARGET_FRAMES), surfaceCapabilities.minImageCount);
 	} else {
@@ -1409,7 +1460,7 @@ KGFXshader Vulkan::createShader(const void* data, u32 size, KGFXshadertype type,
 		return KGFX_HANDLE_NULL;
 	}
 
-	shader->id = shaders.size();
+	shader->id = static_cast<u32>(shaders.size());
 	shaders.push_back(shader);
 	return shader;
 }
@@ -1675,7 +1726,7 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
-	pipeline->id = pipelines.size();
+	pipeline->id = static_cast<u32>(pipelines.size());
 	pipelines.push_back(pipeline);
 	return pipeline;
 }
@@ -1730,6 +1781,37 @@ VkResult Vulkan::createSyncUtilities() {
 	res = vkCreateFence(device, &fenceCreateInfo, nullptr, &inFlightFence);
 	if (res != VK_SUCCESS) {
 		DEBUG_OUT("Failed to create VkFence");
+		return res;
+	}
+
+	return res;
+}
+
+VkExtent2D Vulkan::getWindowExtent() {
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCapabilities);
+	return surfaceCapabilities.currentExtent;
+}
+
+VkResult Vulkan::recreateSwapchain() {
+	vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+	
+	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
+	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkResult res = vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &imageAvailableSemaphore);
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to create VkSemaphore");
+		return res;
+	}
+
+	vkDestroySwapchainKHR(device, swapchain, nullptr);
+	for (u32 i = 0; i < swapchainImageCount; ++i) {
+		vkDestroyImageView(device, swapchainImageViews[i], nullptr);
+	}
+
+	res = createSwapchain();
+	if (res != VK_SUCCESS) {
+		DEBUG_OUT("Failed to recreate swapchain");
 		return res;
 	}
 
@@ -2253,7 +2335,7 @@ void Vulkan::destroyMesh(KGFXmesh mesh) {
 KGFXpipelinemesh Vulkan::pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
 	KGFXpipelinemesh pipelineMesh = new KGFXpipelinemesh_t;
 	pipelineMesh->mesh = mesh;
-	pipelineMesh->id = pipeline->meshes.size();
+	pipelineMesh->id = static_cast<u32>(pipeline->meshes.size());
 	pipelineMesh->binding = binding;
 	pipeline->meshes.push_back(pipelineMesh);
 
@@ -2355,7 +2437,7 @@ KGFXresult Vulkan::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
 		++descIndex;
 	}
 
-	vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
+	vkUpdateDescriptorSets(device, static_cast<u32>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 	pipeline->allDescriptorSetsBound = true;
 	return KGFX_SUCCESS;
 }

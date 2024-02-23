@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #ifdef KGFX_MACOS
 #include <unistd.h>
@@ -204,7 +205,6 @@ int main(int argc, char** argv) {
 
 	mat4x4 matrixData;
 	mat4x4_identity(matrixData);
-	mat4x4_translate(matrixData, 0.5f, 0.5f, 0.0f);
 
 	KGFXbuffer uBuffer = kgfxCreateBuffer(ctx, (KGFXbufferdesc) {
 		.location = KGFX_BUFFER_LOCATION_CPU,
@@ -218,14 +218,6 @@ int main(int argc, char** argv) {
 		printf("failed to bind uniform buffer\n");
 		return 1;
 	}
-
-	void* mapped = kgfxBufferMap(ctx, uBuffer);
-	if (mapped == NULL) {
-		printf("failed to map kgfx buffer\n");
-		return 1;
-	}
-	memcpy(mapped, matrixData, sizeof(f32) * 16);
-	kgfxBufferUnmap(ctx, uBuffer);
 
 	int textureWidth, textureHeight;
 	u8* textureData = stbi_load("assets/texture.png", &textureWidth, &textureHeight, NULL, 4);
@@ -284,11 +276,26 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	void* mapped = kgfxBufferMap(ctx, uBuffer);
+	if (mapped == NULL) {
+		printf("failed to map kgfx buffer\n");
+		return 1;
+	}
+
 	while (!glfwWindowShouldClose(window)) {
+		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+			break;
+		}
+
+		mat4x4_identity(matrixData);
+		mat4x4_translate(matrixData, sin(glfwGetTime()) / 2, cos(glfwGetTime()) / 2, 0.0f);
+		mat4x4_rotate_Z(matrixData, matrixData, (f32) glfwGetTime());
+		memcpy(mapped, matrixData, sizeof(f32) * 16);
 		kgfxRender(ctx, pipeline);
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
+	kgfxBufferUnmap(ctx, uBuffer);
 
 	printf("objects for krunching and destruktion\n");
 	kgfxPipelineUnbindDescriptorSetTexture(ctx, pipeline, pipelineTexture);
