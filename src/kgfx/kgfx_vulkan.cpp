@@ -116,6 +116,8 @@ struct Vulkan {
 
 	KGFXresult pipelineUpdateDescriptorSets(KGFXpipeline pipeline);
 
+	void pipelineUnbindDescriptorSet(KGFXpipeline pipeline, struct KGFXdescriptorset_t& set);
+
 	KGFXpipelinemesh pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
 	void pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh);
 	KGFXpipelinetexture pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding);
@@ -2483,6 +2485,19 @@ KGFXresult Vulkan::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
 	return KGFX_SUCCESS;
 }
 
+void Vulkan::pipelineUnbindDescriptorSet(KGFXpipeline pipeline, KGFXdescriptorset_t& set) {
+	switch (set.usage) {
+	case KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER:
+		pipelineUnbindDescriptorSetBuffer(pipeline, reinterpret_cast<KGFXuniformbuffer>(set.desc));
+		break;
+	case KGFX_DESCRIPTOR_USAGE_TEXTURE:
+		pipelineUnbindDescriptorSetTexture(pipeline, reinterpret_cast<KGFXpipelinetexture>(set.desc));
+		break;
+	}
+	
+	set.desc = nullptr;
+}
+
 KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
 	if (pipeline->descriptorSets.size() < binding) {
 		DEBUG_OUT("Invalid binding");
@@ -2490,9 +2505,7 @@ KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline,
 	}
 
 	if (pipeline->descriptorSets[binding].desc != nullptr) {
-		DEBUG_OUT("not implemented yet");
-		return KGFX_HANDLE_NULL;
-		//pipelineUnbindDescriptorSetBuffer(pipeline, pipeline->descriptorSets[binding].desc);
+		pipelineUnbindDescriptorSet(pipeline, pipeline->descriptorSets[binding]);
 	}
 
 	KGFXdescriptorset_t descriptorSet = {};
@@ -2526,15 +2539,13 @@ void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXunifor
 }
 
 KGFXpipelinetexture Vulkan::pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
-	if (pipeline->descriptorSets.size() < binding) {
+	if (pipeline->descriptorSets.size() <= binding) {
 		DEBUG_OUT("Invalid binding");
 		return KGFX_HANDLE_NULL;
 	}
 
 	if (pipeline->descriptorSets[binding].desc != nullptr) {
-		DEBUG_OUT("not implemented yet");
-		return KGFX_HANDLE_NULL;
-		//pipelineUnbindDescriptorSetBuffer(pipeline, pipeline->descriptorSets[binding].desc);
+		pipelineUnbindDescriptorSet(pipeline, pipeline->descriptorSets[binding]);
 	}
 
 	KGFXpipelinetexture pipelineTexture = new KGFXpipelinetexture_t;

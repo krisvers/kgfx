@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "examples.h"
 
-#define EXAMPLE_COUNT 3
+#define EXAMPLE_COUNT 4
 #define FLAG_COUNT 3
 
 typedef int (*example_func)(void);
@@ -16,6 +16,7 @@ struct example_entry examples[EXAMPLE_COUNT] = {
 	{ .func = example_current, .name = "current" },
 	{ .func = example_triangle, .name = "triangle" },
 	{ .func = example_uniforms, .name = "uniforms" },
+	{ .func = example_texture, .name = "texture" },
 };
 
 typedef void (*flag_func)(void);

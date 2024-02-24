@@ -128,7 +128,7 @@ int example_triangle() {
 	/* describe where the mesh is bound */
 	KGFXmeshbuffer meshBuffer = {
 		.buffer = buffer,
-		.bindpoint = KGFX_BINDPOINT_VERTEX,
+		.bindpoint = KGFX_MESH_BUFFER_BINDPOINT_VERTEX,
 		.offset = 0,
 	};
 
