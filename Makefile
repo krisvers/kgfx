@@ -4,7 +4,7 @@ MAC_LIBS = -Llib/mac -lglfw3 -framework IOKit -framework Cocoa -framework Quartz
 LINUX_LIBS = -lglfw -lvulkan
 
 linux-vulkan:
-	clang++ src/current.c src/kgfx/kgfx_vulkan.cpp src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(LINUX_LIBS) -o kgfx
+	clang++ src/current.c src/kgfx/kgfx_vulkan.cpp src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o kgfx
 
 mac-vulkan:
 	clang -std=c99 -c src/main.c -o obj/main.o $(FLAGS)

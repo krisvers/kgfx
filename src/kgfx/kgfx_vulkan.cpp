@@ -1558,11 +1558,25 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		return KGFX_HANDLE_NULL;
 	}
 
+	if (pipelineDesc.pShaders == nullptr) {
+		DEBUG_OUTF("Shader count of {}, but pShaders is NULL", pipelineDesc.shaderCount);
+		vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+		vkDestroyDescriptorPool(device, pipeline->descriptorPool, nullptr);
+		return KGFX_HANDLE_NULL;
+	}
+
 	VkPipelineShaderStageCreateInfo* stages = new VkPipelineShaderStageCreateInfo[pipelineDesc.shaderCount];
 	for (u32 i = 0; i < pipelineDesc.shaderCount; ++i) {
 		stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		stages[i].flags = 0;
 		stages[i].pNext = nullptr;
+		if (pipelineDesc.pShaders[i]->type > KGFX_SHADERTYPE_MAX || pipelineDesc.pShaders[i]->type < KGFX_SHADERTYPE_MIN) {
+			DEBUG_OUTF("Invalid shader type {}", pipelineDesc.pShaders[i]->type);
+			delete[] stages;
+			vkDestroyDescriptorSetLayout(device, pipeline->descriptorSetLayout, nullptr);
+			vkDestroyDescriptorPool(device, pipeline->descriptorPool, nullptr);
+			return KGFX_HANDLE_NULL;
+		}
 		stages[i].stage = stageFlags[pipelineDesc.pShaders[i]->type];
 		stages[i].module = pipelineDesc.pShaders[i]->module;
 		stages[i].pName = "main";

@@ -109,7 +109,8 @@ int main(int argc, char** argv) {
 	}
 
 	KGFXpipelinedesc pipelineDesc;
-	pipelineDesc.pShaders = (KGFXshader[]) { vshader, fshader };
+	KGFXshader shaders[2] = { vshader, fshader };
+	pipelineDesc.pShaders = shaders;
 	pipelineDesc.shaderCount = 2;
 
 	KGFXpipelineattribute attributes[2] = {
