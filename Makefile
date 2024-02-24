@@ -6,7 +6,7 @@ LINUX_LIBS = -lglfw -lvulkan
 linux-vulkan-examples: linux-vulkan-static
 	clang -c src/main.c $(shell find src -type f -name "example*.c") src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(EXTRA)
 	mv *.o build/
-	clang build/*.o $(LINUX_LIBS) $(EXTRA) -Lbuild -l:libkgfx.a -lm -o kgfx-examples
+	clang++ build/*.o $(LINUX_LIBS) $(EXTRA) -Lbuild -l:libkgfx.a -lm -o kgfx-examples
 
 linux-vulkan-static: clean
 	clang++ -static -c src/kgfx/kgfx_vulkan.cpp $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o obj/kgfx_vulkan.o

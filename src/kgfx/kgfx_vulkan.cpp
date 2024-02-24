@@ -361,6 +361,24 @@ constexpr VkDescriptorType descriptorUsageVkUsage(KGFXdescriptorusage usage) {
 	return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 }
 
+const VkShaderStageFlags bindpointVkShaderStageFlags(KGFXbindpoint bindpoint) {
+	VkShaderStageFlags flags = 0;
+	if (bindpoint & KGFX_BINDPOINT_VERTEX) {
+		flags |= VK_SHADER_STAGE_VERTEX_BIT;
+	}
+	if (bindpoint & KGFX_BINDPOINT_FRAGMENT) {
+		flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+	}
+	if (bindpoint & KGFX_BINDPOINT_GEOMETRY) {
+		flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+	}
+	if (bindpoint & KGFX_BINDPOINT_COMPUTE) {
+		flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+	}
+
+	return flags;
+}
+
 constexpr VkMemoryPropertyFlags bufferLocationVkMemoryPropertyFlags(KGFXbufferlocation location) {
 	switch (location) {
 	case KGFX_BUFFER_LOCATION_CPU:
@@ -997,7 +1015,7 @@ void Vulkan::render(KGFXpipeline pipeline) {
 			return;
 		}
 		res = recreateSwapchain();
-		if (res != VK_SUCCESS) {
+		if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
 			DEBUG_OUT("Failed to recreate swapchain");
 		}
 		return;
@@ -1127,8 +1145,12 @@ void Vulkan::render(KGFXpipeline pipeline) {
 
 	res = vkQueuePresentKHR(presentQueue, &presentInfo);
 	if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+		extent = getWindowExtent();
+		if (extent.width == 0 || extent.height == 0 || extent.width < surfaceCapabilities.minImageExtent.width || extent.height < surfaceCapabilities.minImageExtent.height || extent.width > surfaceCapabilities.maxImageExtent.width || extent.height > surfaceCapabilities.maxImageExtent.height) {
+			return;
+		}
 		res = recreateSwapchain();
-		if (res != VK_SUCCESS) {
+		if (res != VK_SUCCESS || res != VK_SUBOPTIMAL_KHR) {
 			DEBUG_OUT("Failed to recreate swapchain");
 		}
 		return;
@@ -1489,7 +1511,7 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		descriptorSetLayoutBindings[i].binding = pipelineDesc.layout.pDescriptorSets[i].binding;
 		descriptorSetLayoutBindings[i].descriptorType = descriptorUsageVkUsage(pipelineDesc.layout.pDescriptorSets[i].usage);
 		descriptorSetLayoutBindings[i].descriptorCount = 1;
-		descriptorSetLayoutBindings[i].stageFlags = stageFlags[pipelineDesc.layout.pDescriptorSets[i].bindpoint];
+		descriptorSetLayoutBindings[i].stageFlags = bindpointVkShaderStageFlags(pipelineDesc.layout.pDescriptorSets[i].bindpoint);
 		descriptorSetLayoutBindings[i].pImmutableSamplers = nullptr;
 	}
 
@@ -1807,6 +1829,11 @@ VkExtent2D Vulkan::getWindowExtent() {
 }
 
 VkResult Vulkan::recreateSwapchain() {
+	VkExtent2D extent = getWindowExtent();
+	if (extent.width == 0 || extent.height == 0) {
+		return VK_SUBOPTIMAL_KHR;
+	}
+
 	vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 	
 	VkSemaphoreCreateInfo semaphoreCreateInfo = {};

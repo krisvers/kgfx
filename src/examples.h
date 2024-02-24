@@ -3,5 +3,6 @@
 
 int example_current();
 int example_triangle();
+int example_uniforms();
 
 #endif
