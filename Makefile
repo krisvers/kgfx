@@ -3,8 +3,17 @@ FLAGS = -Ilib/include -Iinclude -Wno-switch -Wno-deprecated-declarations -Wno-un
 MAC_LIBS = -Llib/mac -lglfw3 -framework IOKit -framework Cocoa -framework QuartzCore -lMoltenVK -lglfw3
 LINUX_LIBS = -lglfw -lvulkan
 
-linux-vulkan:
-	clang++ src/current.c src/kgfx/kgfx_vulkan.cpp src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o kgfx
+linux-vulkan-examples: linux-vulkan-static
+	clang -c src/main.c $(shell find src -type f -name "example*.c") src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(EXTRA)
+	mv *.o build/
+	clang build/*.o $(LINUX_LIBS) $(EXTRA) -Lbuild -l:libkgfx.a -lm -o kgfx-examples
+
+linux-vulkan-static: clean
+	clang++ -static -c src/kgfx/kgfx_vulkan.cpp $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o obj/kgfx_vulkan.o
+	ar rcs build/libkgfx.a obj/kgfx_vulkan.o
+
+linux-vulkan-dynamic: clean
+	clang++ -shared -fPIC src/kgfx/kgfx_vulkan.cpp $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o build/libkgfx.so
 
 mac-vulkan:
 	clang -std=c99 -c src/main.c -o obj/main.o $(FLAGS)
@@ -20,3 +29,7 @@ mac-metal:
 
 pylaunch:
 	pylauncher ./kgfx $(PWD)
+
+clean:
+	rm -rf build obj
+	mkdir build obj

@@ -18,19 +18,13 @@
 
 #include <kgfx_gh/kgfx_gh.h>
 
-int main(int argc, char** argv) {
+int example_current() {
 	if (!glfwInit()) {
 		return 1;
 	}
 
-	#ifdef KGFX_MACOS
-	if (argc >= 2) {
-		chdir(argv[1]);
-	}
-	#endif
-
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	GLFWwindow* window = glfwCreateWindow(800, 600, "kgfx", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(800, 600, "example_current", NULL, NULL);
 	if (window == NULL) {
 		glfwTerminate();
 		return 1;
