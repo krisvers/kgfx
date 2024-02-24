@@ -1,6 +1,6 @@
 #define NOMINMAX
 
-#include "kgfx.h"
+#include <kgfx/kgfx.h>
 
 #ifndef NDEBUG
 #define KGFX_DEBUG

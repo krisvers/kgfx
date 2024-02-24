@@ -1,4 +1,4 @@
-#include "kgfx_gh.h"
+#include <kgfx_gh/kgfx_gh.h>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>

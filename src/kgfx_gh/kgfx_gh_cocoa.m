@@ -1,4 +1,4 @@
-#include "kgfx_gh.h"
+#include <kgfx_gh/kgfx_gh.h>
 #include <Cocoa/Cocoa.h>
 #include <QuartzCore/QuartzCore.h>
 
