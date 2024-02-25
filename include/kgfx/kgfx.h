@@ -135,6 +135,23 @@ typedef enum {
 	KGFX_DESCRIPTOR_USAGE_MIN = KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER,
 } KGFXdescriptorusage;
 
+typedef enum {
+	KGFX_CULLMODE_NONE = 0,
+	KGFX_CULLMODE_FRONT = 1,
+	KGFX_CULLMODE_BACK = 2,
+	KGFX_CULLMODE_COUNT,
+	KGFX_CULLMODE_MAX = KGFX_CULLMODE_COUNT - 1,
+	KGFX_CULLMODE_MIN = KGFX_CULLMODE_NONE,
+} KGFXcullmode;
+
+typedef enum {
+	KGFX_FRONTFACE_CCW = 0,
+	KGFX_FRONTFACE_CW = 1,
+	KGFX_FRONTFACE_COUNT,
+	KGFX_FRONTFACE_MAX = KGFX_FRONTFACE_COUNT - 1,
+	KGFX_FRONTFACE_MIN = KGFX_FRONTFACE_CCW,
+} KGFXfrontface;
+
 /* buffer related enumerations */
 typedef enum {
 	KGFX_BUFFER_LOCATION_CPU = 0,
@@ -252,6 +269,8 @@ typedef struct {
 	KGFXshader* pShaders;
 	u32 shaderCount;
 	KGFXpipelinelayout layout;
+	KGFXcullmode cullMode;
+	KGFXfrontface frontFace;
 } KGFXpipelinedesc;
 
 /* buffer related structures */

@@ -116,6 +116,8 @@ int example_texture() {
 			.pDescriptorSets = &textureDescSet,
 			.descriptorSetCount = 1,
 		},
+		.cullMode = KGFX_CULLMODE_NONE,
+		.frontFace = KGFX_FRONTFACE_CCW,
 	};
 
 	/* create pipeline based on description */

@@ -94,6 +94,8 @@ int example_triangle() {
 			.pDescriptorSets = NULL,
 			.descriptorSetCount = 0,
 		},
+		.cullMode = KGFX_CULLMODE_NONE,
+		.frontFace = KGFX_FRONTFACE_CCW,
 	};
 
 	/* create pipeline based on description */

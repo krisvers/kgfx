@@ -7,16 +7,66 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <assimp/cimport.h>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#define M_PI 3.14159265358979323846264338327950288
 
 #ifdef KGFX_MACOS
 #include <unistd.h>
 #endif
 
 #include <kgfx_gh/kgfx_gh.h>
+
+typedef struct {
+	vec3 position;
+	vec3 rotation;
+	float fov;
+	float aspect;
+	float near;
+	float far;
+} camera_t;
+
+typedef struct {
+	vec3 pos;
+	vec2 uv;
+} vertex_t;
+
+static u8 keys[GLFW_KEY_LAST + 1] = { 0 };
+static u8 prev_keys[GLFW_KEY_LAST + 1] = { 0 };
+
+static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+	if (key < 0) {
+		return;
+	}
+
+	if (action == GLFW_PRESS) {
+		keys[key] = 1;
+	} else if (action == GLFW_RELEASE) {
+		keys[key] = 0;
+	}
+
+	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+		glfwSetWindowShouldClose(window, GLFW_TRUE);
+	}
+}
+
+static u8 key(int key) {
+	return keys[key];
+}
+
+static u8 key_down(int key) {
+	return keys[key] && !prev_keys[key];
+}
+
+static u8 key_up(int key) {
+	return !keys[key] && prev_keys[key];
+}
 
 int example_current() {
 	if (!glfwInit()) {
@@ -30,9 +80,16 @@ int example_current() {
 		return 1;
 	}
 	glfwSwapInterval(1);
+	glfwSetKeyCallback(window, glfw_key_callback);
 
 	KGFXcontext ctx;
 	if (kgfxCreateContext(KGFX_ANY_VERSION, kgfxWindowFromGLFW(window), & ctx) != KGFX_SUCCESS) {
+		return 1;
+	}
+
+	const struct aiScene* scene = aiImportFile("assets/mesh.obj", aiProcess_Triangulate | aiProcess_FlipUVs);
+	if (scene == NULL) {
+		printf("Failed to import GLTF scene\n");
 		return 1;
 	}
 
@@ -108,8 +165,8 @@ int example_current() {
 	pipelineDesc.shaderCount = 2;
 
 	KGFXpipelineattribute attributes[2] = {
-		{ KGFX_DATATYPE_FLOAT2, 0 },
-		{ KGFX_DATATYPE_FLOAT3, 1 },
+		{ KGFX_DATATYPE_FLOAT3, 0 },
+		{ KGFX_DATATYPE_FLOAT2, 1 },
 	};
 
 	KGFXpipelinebinding binding;
@@ -133,6 +190,8 @@ int example_current() {
 	pipelineDesc.layout.bindingCount = 1;
 	pipelineDesc.layout.pDescriptorSets = descriptorSetDescs;
 	pipelineDesc.layout.descriptorSetCount = 2;
+	pipelineDesc.cullMode = KGFX_CULLMODE_BACK;
+	pipelineDesc.frontFace = KGFX_FRONTFACE_CCW;
 
 	KGFXpipeline pipeline = kgfxCreatePipeline(ctx, pipelineDesc);
 	if (pipeline == KGFX_HANDLE_NULL) {
@@ -141,16 +200,21 @@ int example_current() {
 	kgfxDestroyShader(ctx, vshader);
 	kgfxDestroyShader(ctx, fshader);
 
-	f32 vertices[] = {
-		 0.5f,  0.5f,	1, 0, 0,
-		-0.5f,  0.5f,	0, 0, 0,
-		 0.0f, -0.5f,	0.5f, 1, 0,
-	};
-
+	const struct aiMesh* gltf_mesh = scene->mMeshes[0];
+	/* create buffer (vertex buffer) based on type vertex_t, and indexBuffer using gltf_mesh */
 	KGFXbufferdesc bufferDesc;
 	bufferDesc.location = KGFX_BUFFER_LOCATION_GPU;
 	bufferDesc.usage = KGFX_BUFFER_USAGE_VERTEX_BUFFER;
-	bufferDesc.size = sizeof(vertices);
+	bufferDesc.size = sizeof(vertex_t) * gltf_mesh->mNumVertices;
+	/* vertex_t has 3 float pos, 2 float uv */
+	vertex_t* vertices = malloc(sizeof(vertex_t) * gltf_mesh->mNumVertices);
+	for (unsigned int i = 0; i < gltf_mesh->mNumVertices; ++i) {
+		vertices[i].pos[0] = gltf_mesh->mVertices[i].x;
+		vertices[i].pos[1] = gltf_mesh->mVertices[i].y;
+		vertices[i].pos[2] = gltf_mesh->mVertices[i].z;
+		vertices[i].uv[0] = gltf_mesh->mTextureCoords[0][i].x;
+		vertices[i].uv[1] = gltf_mesh->mTextureCoords[0][i].y;
+	}
 	bufferDesc.pData = vertices;
 
 	KGFXbuffer buffer = kgfxCreateBuffer(ctx, bufferDesc);
@@ -158,20 +222,26 @@ int example_current() {
 		return 1;
 	}
 
-	u32 indices[] = {
-		0, 1, 2,
-	};
-
 	KGFXbufferdesc indexBufferDesc;
 	indexBufferDesc.location = KGFX_BUFFER_LOCATION_GPU;
 	indexBufferDesc.usage = KGFX_BUFFER_USAGE_INDEX_BUFFER;
-	indexBufferDesc.size = sizeof(indices);
+	indexBufferDesc.size = sizeof(u32) * gltf_mesh->mNumFaces * 3;
+	u32* indices = malloc(sizeof(u32) * gltf_mesh->mNumFaces * 3);
+	for (unsigned int i = 0; i < gltf_mesh->mNumFaces; ++i) {
+		indices[i * 3 + 0] = gltf_mesh->mFaces[i].mIndices[0];
+		indices[i * 3 + 1] = gltf_mesh->mFaces[i].mIndices[1];
+		indices[i * 3 + 2] = gltf_mesh->mFaces[i].mIndices[2];
+	}
 	indexBufferDesc.pData = indices;
 
 	KGFXbuffer indexBuffer = kgfxCreateBuffer(ctx, indexBufferDesc);
 	if (indexBuffer == KGFX_HANDLE_NULL) {
 		return 1;
 	}
+
+	free(vertices);
+	free(indices);
+	aiReleaseImport(scene);
 
 	KGFXmeshbuffer meshBuffer;
 	meshBuffer.buffer = buffer;
@@ -215,6 +285,7 @@ int example_current() {
 	}
 
 	int textureWidth, textureHeight;
+	stbi_set_flip_vertically_on_load(1);
 	u8* textureData = stbi_load("assets/texture.png", &textureWidth, &textureHeight, NULL, 4);
 	if (textureData == NULL) {
 		printf("failed to load texture\n");
@@ -277,17 +348,58 @@ int example_current() {
 		return 1;
 	}
 
+	camera_t camera = {
+		.fov = 60.0f,
+		.aspect = 800.0f / 600.0f,
+		.near = 0.1f,
+		.far = 100.0f,
+	};
+	mat4x4 m, v, p;
+	mat4x4_identity(m);
+
 	while (!glfwWindowShouldClose(window)) {
-		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+		if (key(GLFW_KEY_ESCAPE)) {
 			break;
 		}
 
-		mat4x4_identity(matrixData);
-		mat4x4_translate(matrixData, sin(glfwGetTime()) / 2, cos(glfwGetTime()) / 2, 0.0f);
-		mat4x4_rotate_Z(matrixData, matrixData, (f32) glfwGetTime());
-		memcpy(mapped, matrixData, sizeof(f32) * 16);
+		if (key(GLFW_KEY_W)) {
+			camera.position[2] -= 0.1f;
+		}
+		if (key(GLFW_KEY_S)) {
+			camera.position[2] += 0.1f;
+		}
+		if (key(GLFW_KEY_A)) {
+			camera.position[0] -= 0.1f;
+		}
+		if (key(GLFW_KEY_D)) {
+			camera.position[0] += 0.1f;
+		}
+
+		if (key(GLFW_KEY_LEFT)) {
+			camera.rotation[1] -= 1.0f;
+		}
+		if (key(GLFW_KEY_RIGHT)) {
+			camera.rotation[1] += 1.0f;
+		}
+		if (key(GLFW_KEY_UP)) {
+			camera.rotation[0] -= 1.0f;
+		}
+		if (key(GLFW_KEY_DOWN)) {
+			camera.rotation[0] += 1.0f;
+		}
+
+		mat4x4_translate(v, -camera.position[0], -camera.position[1], -camera.position[2]);
+		mat4x4_perspective(p, camera.fov * (M_PI / 180.0), camera.aspect, camera.near, camera.far);
+		mat4x4_rotate_X(p, p, -camera.rotation[0] * (M_PI / 180.0));
+		mat4x4_rotate_Y(p, p, camera.rotation[1] * (M_PI / 180.0));
+		mat4x4_rotate_Z(p, p, -camera.rotation[2] * (M_PI / 180.0));
+
+		v[1][1] = -1;
+		mat4x4_mul(mapped, p, v);
 		kgfxRender(ctx, pipeline);
 		glfwSwapBuffers(window);
+
+		memcpy(prev_keys, keys, sizeof(keys));
 		glfwPollEvents();
 	}
 	kgfxBufferUnmap(ctx, uBuffer);

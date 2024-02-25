@@ -1673,13 +1673,16 @@ KGFXpipeline Vulkan::createPipeline(KGFXpipelinedesc pipelineDesc) {
 	pipelineViewportStateCreateInfo.scissorCount = 1;
 	pipelineViewportStateCreateInfo.pScissors = &scissor;
 
+	VkCullModeFlags cullModes[] = { VK_CULL_MODE_NONE, VK_CULL_MODE_FRONT_BIT, VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_FRONT_AND_BACK };
+	VkFrontFace frontFaces[] = { VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_FRONT_FACE_CLOCKWISE };
+
 	VkPipelineRasterizationStateCreateInfo pipelineRasterizationStateCreateInfo = {};
 	pipelineRasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 	pipelineRasterizationStateCreateInfo.depthClampEnable = VK_FALSE;
 	pipelineRasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
 	pipelineRasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	pipelineRasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-	pipelineRasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	pipelineRasterizationStateCreateInfo.cullMode = cullModes[pipelineDesc.cullMode];
+	pipelineRasterizationStateCreateInfo.frontFace = frontFaces[pipelineDesc.frontFace];
 	pipelineRasterizationStateCreateInfo.depthBiasEnable = VK_FALSE;
 	pipelineRasterizationStateCreateInfo.depthBiasConstantFactor = 0.0f;
 	pipelineRasterizationStateCreateInfo.depthBiasClamp = 0.0f;
@@ -1902,8 +1905,6 @@ u32 Vulkan::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) {
 }
 
 KGFXbuffer Vulkan::createBuffer(KGFXbufferdesc bufferDesc) {
-	
-
 	KGFXbuffer buffer = new KGFXbuffer_t;
 	if (bufferDesc.size == 0) {
 		buffer->buffer = VK_NULL_HANDLE;
