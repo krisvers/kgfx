@@ -87,7 +87,7 @@ int example_current() {
 		return 1;
 	}
 
-	const struct aiScene* scene = aiImportFile("assets/mesh.obj", aiProcess_Triangulate | aiProcess_FlipUVs);
+	const struct aiScene* scene = aiImportFile("assets/mesh.obj", aiProcess_Triangulate);
 	if (scene == NULL) {
 		printf("Failed to import GLTF scene\n");
 		return 1;
@@ -201,12 +201,12 @@ int example_current() {
 	kgfxDestroyShader(ctx, fshader);
 
 	const struct aiMesh* gltf_mesh = scene->mMeshes[0];
-	/* create buffer (vertex buffer) based on type vertex_t, and indexBuffer using gltf_mesh */
+
 	KGFXbufferdesc bufferDesc;
 	bufferDesc.location = KGFX_BUFFER_LOCATION_GPU;
 	bufferDesc.usage = KGFX_BUFFER_USAGE_VERTEX_BUFFER;
 	bufferDesc.size = sizeof(vertex_t) * gltf_mesh->mNumVertices;
-	/* vertex_t has 3 float pos, 2 float uv */
+
 	vertex_t* vertices = malloc(sizeof(vertex_t) * gltf_mesh->mNumVertices);
 	for (unsigned int i = 0; i < gltf_mesh->mNumVertices; ++i) {
 		vertices[i].pos[0] = gltf_mesh->mVertices[i].x;
@@ -349,6 +349,7 @@ int example_current() {
 	}
 
 	camera_t camera = {
+		.position = { 0, 0, 5 },
 		.fov = 60.0f,
 		.aspect = 800.0f / 600.0f,
 		.near = 0.1f,
@@ -357,22 +358,47 @@ int example_current() {
 	mat4x4 m, v, p;
 	mat4x4_identity(m);
 
+	vec3 forward;
+	vec3 up = { 0, 1, 0 };
+	vec3 right;
+
+	float delta = 0;
+	float startTime = 0;
+	const float moveSpeed = 5.0f;
 	while (!glfwWindowShouldClose(window)) {
 		if (key(GLFW_KEY_ESCAPE)) {
 			break;
 		}
 
+		startTime = glfwGetTime();
+
+		up[1] = 1;
+		forward[0] = sinf(camera.rotation[1] * (M_PI / 180.0));
+		forward[1] = -sinf(camera.rotation[0] * (M_PI / 180.0));
+		forward[2] = -cosf(camera.rotation[1] * (M_PI / 180.0));
+		vec3_mul_cross(right, forward, up);
+
+		vec3_scale(forward, forward, delta * moveSpeed);
+		vec3_scale(up, up, delta * moveSpeed);
+		vec3_scale(right, right, delta * moveSpeed);
+
 		if (key(GLFW_KEY_W)) {
-			camera.position[2] -= 0.1f;
+			vec3_add(camera.position, camera.position, forward);
 		}
 		if (key(GLFW_KEY_S)) {
-			camera.position[2] += 0.1f;
+			vec3_sub(camera.position, camera.position, forward);
 		}
 		if (key(GLFW_KEY_A)) {
-			camera.position[0] -= 0.1f;
+			vec3_sub(camera.position, camera.position, right);
 		}
 		if (key(GLFW_KEY_D)) {
-			camera.position[0] += 0.1f;
+			vec3_add(camera.position, camera.position, right);
+		}
+		if (key(GLFW_KEY_E)) {
+			vec3_add(camera.position, camera.position, up);
+		}
+		if (key(GLFW_KEY_Q)) {
+			vec3_sub(camera.position, camera.position, up);
 		}
 
 		if (key(GLFW_KEY_LEFT)) {
@@ -388,19 +414,22 @@ int example_current() {
 			camera.rotation[0] += 1.0f;
 		}
 
-		mat4x4_translate(v, -camera.position[0], -camera.position[1], -camera.position[2]);
+		mat4x4_translate(v, -camera.position[0], camera.position[1], -camera.position[2]);
 		mat4x4_perspective(p, camera.fov * (M_PI / 180.0), camera.aspect, camera.near, camera.far);
 		mat4x4_rotate_X(p, p, -camera.rotation[0] * (M_PI / 180.0));
 		mat4x4_rotate_Y(p, p, camera.rotation[1] * (M_PI / 180.0));
 		mat4x4_rotate_Z(p, p, -camera.rotation[2] * (M_PI / 180.0));
 
 		v[1][1] = -1;
-		mat4x4_mul(mapped, p, v);
+		mat4x4_mul(matrixData, p, v);
+		memcpy(mapped, matrixData, sizeof(f32) * 16);
 		kgfxRender(ctx, pipeline);
 		glfwSwapBuffers(window);
 
 		memcpy(prev_keys, keys, sizeof(keys));
 		glfwPollEvents();
+
+		delta = glfwGetTime() - startTime;
 	}
 	kgfxBufferUnmap(ctx, uBuffer);
 
