@@ -1,7 +1,7 @@
 FLAGS = -Ilib/include -Iinclude -Wno-switch -Wno-deprecated-declarations -Wno-unused-function
 
 MAC_LIBS = -Llib/mac -lglfw3 -framework IOKit -framework Cocoa -framework QuartzCore -lMoltenVK -lglfw3
-LINUX_LIBS = -lglfw -lvulkan
+LINUX_LIBS = -lglfw -lvulkan -lassimp
 
 linux-vulkan-examples: linux-vulkan-static
 	clang -c src/main.c $(shell find src -type f -name "example*.c") src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(EXTRA)
