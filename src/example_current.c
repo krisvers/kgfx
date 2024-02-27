@@ -83,7 +83,7 @@ int example_current() {
 	glfwSetKeyCallback(window, glfw_key_callback);
 
 	KGFXcontext ctx;
-	if (kgfxCreateContext(KGFX_ANY_VERSION, kgfxWindowFromGLFW(window), & ctx) != KGFX_SUCCESS) {
+	if (kgfxCreateContext(KGFX_ANY_VERSION, kgfxWindowFromGLFW(window), &ctx) != KGFX_SUCCESS) {
 		return 1;
 	}
 
