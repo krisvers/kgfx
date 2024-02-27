@@ -28,7 +28,7 @@
 #include <algorithm>
 #include <cstring>
 
-#define KGFX_IMPL_VER KGFX_MAKE_VERSION(1, 0, 0)
+#define KGFX_IMPL_VER KGFX_MAKE_VERSION(0, 1, 0)
 #define KGFX_VK_TARGET_FRAMES 2
 
 #ifdef KGFX_DEBUG
