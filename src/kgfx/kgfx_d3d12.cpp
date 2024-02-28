@@ -32,14 +32,22 @@ struct D3D12 {
 	IDXGIFactory4* factory;
 	IDXGIAdapter1* adapter;
 	ID3D12Device* device;
+	ID3D12CommandQueue* commandQueue;
+
+	HANDLE inFlightFenceEvent;
+	u64 inFlightFenceValue;
+	ID3D12Fence* inFlightFence;
 
 	ID3D12Resource* renderTargets[KGFX_D3D_TARGET_FRAMES];
 	ID3D12DescriptorHeap* rtvDescHeap;
-	ID3D12PipelineState* pipeline;
 
 	ID3D12RootSignature* rootSignature;
+	ID3D12PipelineState* pipeline;
 	ID3D12CommandAllocator* commandAllocator;
-	ID3D12CommandQueue* commandQueue;
+	ID3D12GraphicsCommandList* commandList;
+
+	ID3D12Resource* vertexBuffer;
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 
 	IDXGISwapChain4* swapchain;
 
@@ -529,6 +537,64 @@ HRESULT D3D12::init() {
 		}
 	}
 
+	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipeline, IID_PPV_ARGS(&commandList));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create command list");
+		return hr;
+	}
+
+	commandList->Close();
+
+	{
+		const float vertices[] = {
+			0.0f, 0.5f, 0.0f,
+			0.5f, -0.5f, 0.0f,
+			-0.5f, -0.5f, 0.0f
+		};
+
+		D3D12_HEAP_PROPERTIES heapProperties = {};
+		heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+		D3D12_RESOURCE_DESC resourceDesc = {};
+		resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		resourceDesc.Alignment = 0;
+		resourceDesc.Width = sizeof(vertices);
+		resourceDesc.Height = 1;
+		resourceDesc.DepthOrArraySize = 1;
+		resourceDesc.MipLevels = 1;
+		resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+		resourceDesc.SampleDesc.Count = 1;
+		resourceDesc.SampleDesc.Quality = 0;
+		resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&vertexBuffer));
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to create vertex buffer");
+			return hr;
+		}
+
+		void* mapped;
+		D3D12_RANGE range = { 0 };
+		hr = vertexBuffer->Map(0, &range, &mapped);
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to map vertex buffer");
+			return hr;
+		}
+		memcpy(mapped, vertices, sizeof(vertices));
+		vertexBuffer->Unmap(0, nullptr);
+
+		vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
+		vertexBufferView.StrideInBytes = sizeof(float) * 3;
+		vertexBufferView.SizeInBytes = sizeof(vertices);
+	}
+
+	hr = createSyncUtilities();
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create sync utilities");
+		return hr;
+	}
+
 	DEBUG_OUT("KGFX and D3D12 initialized properly");
 	return S_OK;
 }
@@ -537,7 +603,21 @@ void D3D12::destroy() {
 
 }
 
-void D3D12::render(KGFXpipeline pipeline) {
+void D3D12::render(KGFXpipeline kgfxPipeline) {
+	u32 value = inFlightFenceValue;
+
+	HRESULT hr = commandAllocator->Reset();
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to reset command allocator");
+		return;
+	}
+
+	hr = commandList->Reset(commandAllocator, pipeline);
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to reset command list");
+		return;
+	}
+
 
 }
 
@@ -640,5 +720,22 @@ HRESULT D3D12::createSwapchain() {
 	}
 
 	factory->MakeWindowAssociation(reinterpret_cast<HWND>(ctx->window.hwnd), DXGI_MWA_NO_ALT_ENTER);
+	return S_OK;
+}
+
+HRESULT D3D12::createSyncUtilities() {
+	HRESULT hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&inFlightFence));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create in flight fence");
+		return hr;
+	}
+	++inFlightFenceValue;
+
+	inFlightFenceEvent = CreateEvent(0, FALSE, FALSE, NULL);
+	if (inFlightFenceEvent == NULL) {
+		DEBUG_OUT("Failed to create in flight fence event");
+		return E_FAIL;
+	}
+
 	return S_OK;
 }
