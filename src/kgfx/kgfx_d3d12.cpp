@@ -49,7 +49,11 @@ struct D3D12 {
 	ID3D12Resource* vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 
+	u32 frameIndex;
 	IDXGISwapChain4* swapchain;
+
+	D3D12_VIEWPORT viewport;
+	D3D12_RECT scissor;
 
 	HRESULT init();
 	void destroy();
@@ -346,6 +350,19 @@ HRESULT D3D12::init() {
 		}
 	}
 
+	RECT extent = getWindowExtent();
+	viewport.Width = static_cast<f32>(extent.right - extent.left);
+	viewport.Height = static_cast<f32>(extent.bottom - extent.top);
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+	viewport.TopLeftX = 0;
+	viewport.TopLeftY = 0;
+
+	scissor.left = 0;
+	scissor.top = 0;
+	scissor.right = static_cast<long>(viewport.Width);
+	scissor.bottom = static_cast<long>(viewport.Height);
+
 	hr = selectAdapter();
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to select adapter");
@@ -477,7 +494,7 @@ HRESULT D3D12::init() {
 
 		D3D12_RASTERIZER_DESC rasterizerDesc = {};
 		rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
-		rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+		rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 		rasterizerDesc.FrontCounterClockwise = TRUE;
 		rasterizerDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
 		rasterizerDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
@@ -600,12 +617,74 @@ HRESULT D3D12::init() {
 }
 
 void D3D12::destroy() {
+	#ifdef KGFX_DEBUG
+	if (debug != nullptr) {
+		debug->Release();
+	}
+	#endif
 
+	if (factory != nullptr) {
+		factory->Release();
+	}
+
+	if (adapter != nullptr) {
+		adapter->Release();
+	}
+
+	if (device != nullptr) {
+		device->Release();
+	}
+
+	if (commandQueue != nullptr) {
+		commandQueue->Release();
+	}
+
+	if (inFlightFence != nullptr) {
+		inFlightFence->Release();
+	}
+
+	if (inFlightFenceEvent != nullptr) {
+		CloseHandle(inFlightFenceEvent);
+	}
+
+	if (swapchain != nullptr) {
+		swapchain->Release();
+	}
+
+	if (rtvDescHeap != nullptr) {
+		rtvDescHeap->Release();
+	}
+
+	if (rootSignature != nullptr) {
+		rootSignature->Release();
+	}
+
+	if (commandAllocator != nullptr) {
+		commandAllocator->Release();
+	}
+
+	if (commandList != nullptr) {
+		commandList->Release();
+	}
+
+	for (u32 i = 0; i < KGFX_D3D_TARGET_FRAMES; ++i) {
+		if (renderTargets[i] != nullptr) {
+			renderTargets[i]->Release();
+		}
+	}
+
+	if (pipeline != nullptr) {
+		pipeline->Release();
+	}
+
+	if (vertexBuffer != nullptr) {
+		vertexBuffer->Release();
+	}
 }
 
 void D3D12::render(KGFXpipeline kgfxPipeline) {
 	u32 value = inFlightFenceValue;
-
+	
 	HRESULT hr = commandAllocator->Reset();
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to reset command allocator");
@@ -618,7 +697,87 @@ void D3D12::render(KGFXpipeline kgfxPipeline) {
 		return;
 	}
 
+	commandList->SetGraphicsRootSignature(rootSignature);
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissor);
 
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	barrier.Transition.pResource = renderTargets[frameIndex];
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &barrier);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvDescHeap->GetCPUDescriptorHandleForHeapStart();
+	handle.ptr += frameIndex * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+	commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+
+	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+	commandList->ClearRenderTargetView(handle, clearColor, 0, nullptr);
+
+	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+	commandList->DrawInstanced(3, 1, 0, 0);
+
+	D3D12_RESOURCE_BARRIER presentBarrier = barrier;
+	presentBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	presentBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+
+	commandList->ResourceBarrier(1, &presentBarrier);
+
+	hr = commandList->Close();
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to close command list");
+		return;
+	}
+
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList));
+
+	{
+		u32 flags = 0;
+		#ifdef KGFX_DEBUG
+		//flags |= DXGI_PRESENT_TEST;
+		#endif
+
+		DXGI_PRESENT_PARAMETERS params = {};
+		hr = swapchain->Present1(1, flags, &params);
+		if (FAILED(hr)) {
+			if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+				DEBUG_OUT("Device removed or reset");
+				return;
+			} else {
+				DEBUG_OUT("Failed to present");
+				return;
+			}
+		}
+
+		u32 value = inFlightFenceValue;
+
+		hr = commandQueue->Signal(inFlightFence, value);
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to signal in flight fence");
+			return;
+		}
+
+		++inFlightFenceValue;
+
+		u64 completed = inFlightFence->GetCompletedValue();
+		if (inFlightFence->GetCompletedValue() < value) {
+			hr = inFlightFence->SetEventOnCompletion(value, inFlightFenceEvent);
+			if (FAILED(hr)) {
+				DEBUG_OUT("Failed to set event on completion");
+				return;
+			}
+
+			WaitForSingleObject(inFlightFenceEvent, INFINITE);
+		}
+
+		frameIndex = swapchain->GetCurrentBackBufferIndex();
+	}
 }
 
 RECT D3D12::getWindowExtent() {
@@ -697,11 +856,9 @@ HRESULT D3D12::createCommandUtilities() {
 }
 
 HRESULT D3D12::createSwapchain() {
-	RECT extent = getWindowExtent();
-
 	DXGI_SWAP_CHAIN_DESC1 swapchainDesc = {};
-	swapchainDesc.Width = extent.right - extent.left;
-	swapchainDesc.Height = extent.bottom - extent.top;
+	swapchainDesc.Width = viewport.Width;
+	swapchainDesc.Height = viewport.Height;
 	swapchainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	swapchainDesc.Stereo = FALSE;
 	swapchainDesc.SampleDesc.Count = 1;
