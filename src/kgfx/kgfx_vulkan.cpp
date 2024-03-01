@@ -111,7 +111,7 @@ struct Vulkan {
 	KGFXtexture createTexture(KGFXtexturedesc textureDesc);
 	KGFXsampler createSampler(KGFXsamplerdesc samplerDesc);
 
-	KGFXshader createShader(const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium);
+	KGFXshader createShader(KGFXshaderdesc shaderDesc);
 	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
 
 	KGFXresult pipelineUpdateDescriptorSets(KGFXpipeline pipeline);
@@ -486,13 +486,13 @@ void kgfxRender(KGFXcontext ctx, KGFXpipeline pipeline) {
 	ctx->vulkan.render(pipeline);
 }
 
-KGFXshader kgfxCreateShader(KGFXcontext ctx, const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium) {
+KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return KGFX_HANDLE_NULL;
 	}
 
-	return ctx->vulkan.createShader(data, size, type, medium);
+	return ctx->vulkan.createShader(shaderDesc);
 }
 
 void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
@@ -1453,25 +1453,25 @@ KGFXrenderpass Vulkan::createRenderPass() {
 	return renderPass;
 }
 
-KGFXshader Vulkan::createShader(const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium) {
-	if (data == nullptr) {
+KGFXshader Vulkan::createShader(KGFXshaderdesc shaderDesc) {
+	if (shaderDesc.pData == nullptr) {
 		DEBUG_OUT("Invalid shader data/source");
 		return KGFX_HANDLE_NULL;
 	}
 
-	if (type < KGFX_SHADERTYPE_MIN || type > KGFX_SHADERTYPE_MAX) {
+	if (shaderDesc.type < KGFX_SHADERTYPE_MIN || shaderDesc.type > KGFX_SHADERTYPE_MAX) {
 		DEBUG_OUT("Invalid KGFXshadertype");
 		return KGFX_HANDLE_NULL;
 	}
 
 	KGFXshader shader = new KGFXshader_t;
-	shader->type = type;
+	shader->type = shaderDesc.type;
 
 	VkShaderModuleCreateInfo createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	if (medium == KGFX_MEDIUM_SPIRV) {
-		createInfo.codeSize = size;
-		createInfo.pCode = reinterpret_cast<const u32*>(data);
+	if (shaderDesc.medium == KGFX_MEDIUM_SPIRV) {
+		createInfo.codeSize = shaderDesc.size;
+		createInfo.pCode = reinterpret_cast<const u32*>(shaderDesc.pData);
 	} else {
 		DEBUG_OUT("Unsupported shader medium");
 		return KGFX_HANDLE_NULL;

@@ -83,9 +83,10 @@ typedef enum {
 
 typedef enum {
 	KGFX_MEDIUM_SPIRV = 0,
-	KGFX_MEDIUM_GLSL = 1,
-	KGFX_MEDIUM_HLSL = 2,
-	KGFX_MEDIUM_MSL = 3,
+	KGFX_MEDIUM_DIXL = 1,
+	KGFX_MEDIUM_GLSL = 2,
+	KGFX_MEDIUM_HLSL = 3,
+	KGFX_MEDIUM_MSL = 4,
 } KGFXshadermedium;
 
 typedef enum {
@@ -153,6 +154,14 @@ typedef enum {
 	KGFX_FRONTFACE_MIN = KGFX_FRONTFACE_CCW,
 } KGFXfrontface;
 
+typedef enum {
+	KGFX_FILLMODE_SOLID = 0,
+	KGFX_FILLMODE_LINES = 1,
+	KGFX_FILLMODE_COUNT,
+	KGFX_FILLMODE_MAX = KGFX_FILLMODE_COUNT - 1,
+	KGFX_FILLMODE_MIN = KGFX_FILLMODE_SOLID,
+} KGFXfillmode;
+
 /* buffer related enumerations */
 typedef enum {
 	KGFX_BUFFER_LOCATION_CPU = 0,
@@ -179,15 +188,13 @@ typedef enum {
 } KGFXmeshbufferbindpoint;
 
 typedef enum {
-	KGFX_MESH_TOPOLOGY_POINTS = 0,
-	KGFX_MESH_TOPOLOGY_LINES = 1,
-	KGFX_MESH_TOPOLOGY_LINE_STRIP = 2,
-	KGFX_MESH_TOPOLOGY_TRIANGLES = 3,
-	KGFX_MESH_TOPOLOGY_TRIANGLE_STRIP = 4,
-	KGFX_MESH_TOPOLOGY_COUNT,
-	KGFX_MESH_TOPOLOGY_MAX = KGFX_MESH_TOPOLOGY_COUNT - 1,
-	KGFX_MESH_TOPOLOGY_MIN = KGFX_MESH_TOPOLOGY_POINTS,
-} KGFXmeshtopology;
+	KGFX_TOPOLOGY_POINTS = 0,
+	KGFX_TOPOLOGY_LINES = 1,
+	KGFX_TOPOLOGY_TRIANGLES = 2,
+	KGFX_TOPOLOGY_COUNT,
+	KGFX_TOPOLOGY_MAX = KGFX_TOPOLOGY_COUNT - 1,
+	KGFX_TOPOLOGY_MIN = KGFX_TOPOLOGY_POINTS,
+} KGFXtopology;
 
 /* texture related enumerations */
 typedef enum {
@@ -241,6 +248,15 @@ KGFX_DEFINE_HANDLE(KGFXpipelinetexture);
 
 /* pipeline related descriptors */
 typedef struct {
+	const char* entryName;
+	const void* pData;
+	u32 size;
+	KGFXshadertype type;
+	KGFXshadermedium medium;
+} KGFXshaderdesc;
+
+typedef struct {
+	const char* semanticName;
 	KGFXdatatype type;
 	u32 location;
 } KGFXpipelineattribute;
@@ -272,6 +288,8 @@ typedef struct {
 	KGFXpipelinelayout layout;
 	KGFXcullmode cullMode;
 	KGFXfrontface frontFace;
+	KGFXfillmode fillMode;
+	KGFXtopology topology;
 } KGFXpipelinedesc;
 
 /* buffer related structures */
@@ -327,7 +345,7 @@ KGFX_API KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontex
 /* destroys a kgfx context */
 KGFX_API void kgfxDestroyContext(KGFXcontext ctx);
 
-KGFX_API KGFXshader kgfxCreateShader(KGFXcontext ctx, const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium);
+KGFX_API KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc);
 
 KGFX_API void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader);
 

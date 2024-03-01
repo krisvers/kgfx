@@ -119,8 +119,16 @@ int example_current() {
 
 		fclose(fp);
 	}
+
+	KGFXshaderdesc shaderDesc = {
+		.entryName = NULL,
+		.type = KGFX_SHADERTYPE_VERTEX,
+		.medium = KGFX_MEDIUM_SPIRV,
+		.pData = (const void*) vsrc,
+		.size = (u32) vsize,
+	};
 	
-	KGFXshader vshader = kgfxCreateShader(ctx, (const void*) vsrc, (u32) vsize, KGFX_SHADERTYPE_VERTEX, KGFX_MEDIUM_SPIRV);
+	KGFXshader vshader = kgfxCreateShader(ctx, shaderDesc);
 	free(vsrc);
 	if (vshader == KGFX_HANDLE_NULL) {
 		return 1;
@@ -152,8 +160,12 @@ int example_current() {
 
 		fclose(fp);
 	}
+
+	shaderDesc.type = KGFX_SHADERTYPE_FRAGMENT;
+	shaderDesc.pData = (const void*) fsrc;
+	shaderDesc.size = (u32) fsize;
 	
-	KGFXshader fshader = kgfxCreateShader(ctx, (const void*) fsrc, (u32) fsize, KGFX_SHADERTYPE_FRAGMENT, KGFX_MEDIUM_SPIRV);
+	KGFXshader fshader = kgfxCreateShader(ctx, shaderDesc);
 	free(fsrc);
 	if (fshader == KGFX_HANDLE_NULL) {
 		return 1;

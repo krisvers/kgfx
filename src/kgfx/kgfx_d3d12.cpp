@@ -4,6 +4,9 @@
 #include <Windows.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#ifdef KGFX_DEBUG
+#include <dxgidebug.h>
+#endif
 #include <d3dcompiler.h>
 
 #include <vector>
@@ -18,9 +21,11 @@
 #ifdef KGFX_DEBUG
 #define DEBUG_OUT(msg) debugFunc(msg)
 #define DEBUG_OUTF(fmt, ...) debugFunc(fmt, __VA_ARGS__)
+#define RELEASE(obj) if (obj != nullptr) { reinterpret_cast<IUnknown*>(obj)->Release(); obj = nullptr; }
 #else
 #define DEBUG_OUT(msg)
 #define DEBUG_OUTF(fmt, ...)
+#define RELEASE(obj) if (obj != nullptr) { reinterpret_cast<IUnknown*>(obj)->Release(); }
 #endif
 
 struct D3D12 {
@@ -28,6 +33,7 @@ struct D3D12 {
 
 	#ifdef KGFX_DEBUG
 	ID3D12Debug* debug;
+	IDXGIDebug1* dxgiDebug;
 	#endif
 	IDXGIFactory4* factory;
 	IDXGIAdapter1* adapter;
@@ -40,11 +46,9 @@ struct D3D12 {
 
 	ID3D12Resource* renderTargets[KGFX_D3D_TARGET_FRAMES];
 	ID3D12DescriptorHeap* rtvDescHeap;
-
+	
 	ID3D12RootSignature* rootSignature;
-	ID3D12PipelineState* pipeline;
 	ID3D12CommandAllocator* commandAllocator;
-	ID3D12GraphicsCommandList* commandList;
 
 	ID3D12Resource* vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
@@ -80,7 +84,7 @@ struct D3D12 {
 	KGFXtexture createTexture(KGFXtexturedesc textureDesc);
 	KGFXsampler createSampler(KGFXsamplerdesc samplerDesc);
 
-	KGFXshader createShader(const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium);
+	KGFXshader createShader(KGFXshaderdesc shaderDesc);
 	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
 
 	KGFXresult pipelineUpdateDescriptorSets(KGFXpipeline pipeline);
@@ -111,11 +115,13 @@ struct KGFXcontext_t {
 };
 
 struct KGFXshader_t {
-	s8 temp;
+	ID3DBlob* blob;
+	KGFXshadertype type;
 };
 
 struct KGFXpipeline_t {
-	s8 temp;
+	ID3D12PipelineState* pipeline;
+	ID3D12GraphicsCommandList* commandList;
 };
 
 struct KGFXrenderpass_t {
@@ -184,6 +190,24 @@ static void debugFunc(const char* format, Types... types) {
 	std::cout << "KGFX debug: " << stream.str() << std::endl;
 }
 
+constexpr DXGI_FORMAT datatypeToDxgiFormat(KGFXdatatype type) {
+	switch (type) {
+		case KGFX_DATATYPE_FLOAT: return DXGI_FORMAT_R32_FLOAT;
+		case KGFX_DATATYPE_FLOAT2: return DXGI_FORMAT_R32G32_FLOAT;
+		case KGFX_DATATYPE_FLOAT3: return DXGI_FORMAT_R32G32B32_FLOAT;
+		case KGFX_DATATYPE_FLOAT4: return DXGI_FORMAT_R32G32B32A32_FLOAT;
+		case KGFX_DATATYPE_INT: return DXGI_FORMAT_R32_SINT;
+		case KGFX_DATATYPE_INT2: return DXGI_FORMAT_R32G32_SINT;
+		case KGFX_DATATYPE_INT3: return DXGI_FORMAT_R32G32B32_SINT;
+		case KGFX_DATATYPE_INT4: return DXGI_FORMAT_R32G32B32A32_SINT;
+		case KGFX_DATATYPE_UINT: return DXGI_FORMAT_R32_UINT;
+		case KGFX_DATATYPE_UINT2: return DXGI_FORMAT_R32G32_UINT;
+		case KGFX_DATATYPE_UINT3: return DXGI_FORMAT_R32G32B32_UINT;
+		case KGFX_DATATYPE_UINT4: return DXGI_FORMAT_R32G32B32A32_UINT;
+		default: return DXGI_FORMAT_UNKNOWN;
+	}
+}
+
 KGFX_API KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
 	if (window.hwnd == INVALID_HANDLE_VALUE) {
 		return KGFX_INVALID_ARGUMENT;
@@ -224,16 +248,31 @@ KGFX_API void kgfxDestroyContext(KGFXcontext ctx) {
 	delete ctx;
 }
 
-KGFX_API KGFXshader kgfxCreateShader(KGFXcontext ctx, const void* data, u32 size, KGFXshadertype type, KGFXshadermedium medium) {
-	return new KGFXshader_t{};
+KGFX_API KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.createShader(shaderDesc);
 }
 
 KGFX_API void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
-	delete shader;
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.destroyShader(shader);
 }
 
 KGFX_API KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc) {
-	return new KGFXpipeline_t{};
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.createPipeline(pipelineDesc);
 }
 
 KGFX_API KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
@@ -261,7 +300,12 @@ KGFX_API void kgfxPipelineUnbindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeli
 }
 
 KGFX_API void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline) {
-	delete pipeline;
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.destroyPipeline(pipeline);
 }
 
 KGFX_API KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
@@ -334,6 +378,21 @@ HRESULT D3D12::init() {
 		return hr;
 	} else {
 		debug->EnableDebugLayer();
+	}
+
+	hr = DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiDebug));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to get DXGI debug interface");
+		return hr;
+	} else {
+		dxgiDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+		IDXGIInfoQueue* infoQueue;
+		hr = DXGIGetDebugInterface1(0, IID_PPV_ARGS(&infoQueue));
+		if (SUCCEEDED(hr)) {
+			infoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
+			infoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+			infoQueue->Release();
+		}
 	}
 	#endif
 
@@ -437,136 +496,17 @@ HRESULT D3D12::init() {
 			return hr;
 		}
 
-		signature->Release();
+		RELEASE(signature);
 	}
-
-	{
-		const char* src = R"(
-			struct vinput_t {
-				float3 position : POSITION;
-			};
-
-			struct pinput_t {
-				float4 position : SV_POSITION;
-			};
-
-			pinput_t vmain(vinput_t input) {
-				pinput_t output;
-				output.position = float4(input.position, 1.0f);
-				return output;
-			}
-
-			float4 pmain(pinput_t input) : SV_TARGET {
-				return float4(1.0f, 0.0f, 0.0f, 1.0f);
-			}
-		)";
-
-		u32 compileFlags = 0;
-		#ifdef KGFX_DEBUG
-		compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-		#endif
-
-		ID3DBlob* error;
-
-		ID3DBlob* vertexShader;
-		hr = D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, "vmain", "vs_5_0", compileFlags, 0, &vertexShader, &error);
-		if (FAILED(hr)) {
-			char* buf = new char[error->GetBufferSize()];
-			memcpy(buf, error->GetBufferPointer(), error->GetBufferSize());
-			DEBUG_OUTF("Failed to compile vertex shader: {}", buf);
-			delete[] buf;
-			return hr;
-		}
-
-		ID3DBlob* pixelShader;
-		hr = D3DCompile(src, strlen(src), nullptr, nullptr, nullptr, "pmain", "ps_5_0", compileFlags, 0, &pixelShader, &error);
-		if (FAILED(hr)) {
-			char* buf = new char[error->GetBufferSize()];
-			memcpy(buf, error->GetBufferPointer(), error->GetBufferSize());
-			DEBUG_OUTF("Failed to compile pixel shader: {}", buf);
-			delete[] buf;
-			return hr;
-		}
-
-		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
-		};
-
-		D3D12_RASTERIZER_DESC rasterizerDesc = {};
-		rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
-		rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
-		rasterizerDesc.FrontCounterClockwise = TRUE;
-		rasterizerDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
-		rasterizerDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-		rasterizerDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-		rasterizerDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
-		rasterizerDesc.DepthClipEnable = TRUE;
-		rasterizerDesc.MultisampleEnable = FALSE;
-		rasterizerDesc.AntialiasedLineEnable = FALSE;
-		rasterizerDesc.ForcedSampleCount = 0;
-		rasterizerDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-
-		D3D12_BLEND_DESC blendDesc = {};
-		blendDesc.AlphaToCoverageEnable = FALSE;
-		blendDesc.IndependentBlendEnable = FALSE;
-		blendDesc.RenderTarget[0].BlendEnable = FALSE;
-		blendDesc.RenderTarget[0].LogicOpEnable = FALSE;
-		blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-		blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-		blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-		blendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
-		blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-
-		D3D12_DEPTH_STENCIL_DESC depthStencilDesc = {};
-		depthStencilDesc.DepthEnable = FALSE;
-		depthStencilDesc.StencilEnable = FALSE;
-
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.pRootSignature = rootSignature;
-		psoDesc.VS = { vertexShader->GetBufferPointer(), vertexShader->GetBufferSize() };
-		psoDesc.PS = { pixelShader->GetBufferPointer(), pixelShader->GetBufferSize() };
-		psoDesc.StreamOutput = { nullptr, 0, nullptr, 0, 0 };
-		psoDesc.BlendState = blendDesc;
-		psoDesc.SampleMask = UINT_MAX;
-		psoDesc.RasterizerState = rasterizerDesc;
-		psoDesc.DepthStencilState = depthStencilDesc;
-		psoDesc.InputLayout = { inputElementDescs, 1 };
-		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		psoDesc.NumRenderTargets = 1;
-		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
-		psoDesc.SampleDesc.Count = 1;
-		psoDesc.SampleDesc.Quality = 0;
-
-		hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline));
-		if (FAILED(hr)) {
-			DEBUG_OUT("Failed to create pipeline state");
-			return hr;
-		}
-
-		vertexShader->Release();
-		pixelShader->Release();
-		if (error != nullptr) {
-			error->Release();
-		}
-	}
-
-	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipeline, IID_PPV_ARGS(&commandList));
-	if (FAILED(hr)) {
-		DEBUG_OUT("Failed to create command list");
-		return hr;
-	}
-
-	commandList->Close();
 
 	{
 		const float vertices[] = {
-			0.0f, 0.5f, 0.0f,
+			0.5f, 0.5f, 0.0f,
 			0.5f, -0.5f, 0.0f,
-			-0.5f, -0.5f, 0.0f
+			-0.5f, -0.5f, 0.0f,
+			-0.5f, 0.5f, 0.0f,
+			0.5f, 0.5f, 0.0f,
+			-0.5f, -0.5f, 0.0f,
 		};
 
 		D3D12_HEAP_PROPERTIES heapProperties = {};
@@ -618,71 +558,41 @@ HRESULT D3D12::init() {
 
 void D3D12::destroy() {
 	#ifdef KGFX_DEBUG
-	if (debug != nullptr) {
-		debug->Release();
-	}
+	RELEASE(debug);
 	#endif
+	
 
-	if (factory != nullptr) {
-		factory->Release();
-	}
-
-	if (adapter != nullptr) {
-		adapter->Release();
-	}
-
-	if (device != nullptr) {
-		device->Release();
-	}
-
-	if (commandQueue != nullptr) {
-		commandQueue->Release();
-	}
-
-	if (inFlightFence != nullptr) {
-		inFlightFence->Release();
-	}
-
+	RELEASE(inFlightFence);
 	if (inFlightFenceEvent != nullptr) {
 		CloseHandle(inFlightFenceEvent);
+		#ifdef KGFX_DEBUG
+		inFlightFenceEvent = nullptr;
+		#endif
 	}
 
-	if (swapchain != nullptr) {
-		swapchain->Release();
-	}
-
-	if (rtvDescHeap != nullptr) {
-		rtvDescHeap->Release();
-	}
-
-	if (rootSignature != nullptr) {
-		rootSignature->Release();
-	}
-
-	if (commandAllocator != nullptr) {
-		commandAllocator->Release();
-	}
-
-	if (commandList != nullptr) {
-		commandList->Release();
-	}
+	RELEASE(swapchain);
+	RELEASE(rtvDescHeap);
+	RELEASE(rootSignature);
+	RELEASE(commandAllocator);
 
 	for (u32 i = 0; i < KGFX_D3D_TARGET_FRAMES; ++i) {
-		if (renderTargets[i] != nullptr) {
-			renderTargets[i]->Release();
-		}
+		RELEASE(renderTargets[i]);
 	}
 
-	if (pipeline != nullptr) {
-		pipeline->Release();
-	}
+	RELEASE(vertexBuffer);
 
-	if (vertexBuffer != nullptr) {
-		vertexBuffer->Release();
-	}
+	RELEASE(commandQueue);
+	RELEASE(device);
+	RELEASE(adapter);
+	RELEASE(factory);
+
+	#ifdef KGFX_DEBUG
+	dxgiDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+	RELEASE(dxgiDebug);
+	#endif
 }
 
-void D3D12::render(KGFXpipeline kgfxPipeline) {
+void D3D12::render(KGFXpipeline pipeline) {
 	u32 value = inFlightFenceValue;
 	
 	HRESULT hr = commandAllocator->Reset();
@@ -691,15 +601,15 @@ void D3D12::render(KGFXpipeline kgfxPipeline) {
 		return;
 	}
 
-	hr = commandList->Reset(commandAllocator, pipeline);
+	hr = pipeline->commandList->Reset(commandAllocator, pipeline->pipeline);
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to reset command list");
 		return;
 	}
 
-	commandList->SetGraphicsRootSignature(rootSignature);
-	commandList->RSSetViewports(1, &viewport);
-	commandList->RSSetScissorRects(1, &scissor);
+	pipeline->commandList->SetGraphicsRootSignature(rootSignature);
+	pipeline->commandList->RSSetViewports(1, &viewport);
+	pipeline->commandList->RSSetScissorRects(1, &scissor);
 
 	D3D12_RESOURCE_BARRIER barrier = {};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -709,33 +619,33 @@ void D3D12::render(KGFXpipeline kgfxPipeline) {
 	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 
-	commandList->ResourceBarrier(1, &barrier);
+	pipeline->commandList->ResourceBarrier(1, &barrier);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvDescHeap->GetCPUDescriptorHandleForHeapStart();
 	handle.ptr += frameIndex * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-	commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+	pipeline->commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
 
 	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-	commandList->ClearRenderTargetView(handle, clearColor, 0, nullptr);
+	pipeline->commandList->ClearRenderTargetView(handle, clearColor, 0, nullptr);
 
-	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-	commandList->DrawInstanced(3, 1, 0, 0);
+	pipeline->commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	pipeline->commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+	pipeline->commandList->DrawInstanced(6, 1, 0, 0);
 
 	D3D12_RESOURCE_BARRIER presentBarrier = barrier;
 	presentBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	presentBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
 
-	commandList->ResourceBarrier(1, &presentBarrier);
+	pipeline->commandList->ResourceBarrier(1, &presentBarrier);
 
-	hr = commandList->Close();
+	hr = pipeline->commandList->Close();
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to close command list");
 		return;
 	}
 
-	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList));
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&pipeline->commandList));
 
 	{
 		u32 flags = 0;
@@ -807,6 +717,8 @@ HRESULT D3D12::selectAdapter() {
 				bestIndex = i;
 			}
 		}
+		
+		RELEASE(adapter);
 	}
 
 	if (best == 0) {
@@ -895,4 +807,310 @@ HRESULT D3D12::createSyncUtilities() {
 	}
 
 	return S_OK;
+}
+
+KGFXbuffer D3D12::createBuffer(KGFXbufferdesc bufferDesc) {
+	return KGFX_HANDLE_NULL;
+}
+
+KGFXresult D3D12::uploadBuffer(KGFXbuffer buffer, u32 size, void* data) {
+	return KGFX_SUCCESS;
+}
+
+void* D3D12::mapBuffer(KGFXbuffer buffer) {
+	return KGFX_HANDLE_NULL;
+}
+
+void D3D12::unmapBuffer(KGFXbuffer buffer) {
+
+}
+
+KGFXresult D3D12::copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
+	return KGFX_SUCCESS;
+}
+
+KGFXresult D3D12::copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
+	return KGFX_SUCCESS;
+}
+
+KGFXmesh D3D12::createMesh(KGFXmeshdesc meshDesc) {
+	return KGFX_HANDLE_NULL;
+}
+
+KGFXtexture D3D12::createTexture(KGFXtexturedesc textureDesc) {
+	return KGFX_HANDLE_NULL;
+}
+
+KGFXsampler D3D12::createSampler(KGFXsamplerdesc samplerDesc) {
+	return KGFX_HANDLE_NULL;
+}
+
+KGFXshader D3D12::createShader(KGFXshaderdesc shaderDesc) {
+	if (shaderDesc.pData == nullptr) {
+		DEBUG_OUT("Invalid shader data");
+		return nullptr;
+	}
+
+	if (shaderDesc.size == 0) {
+		DEBUG_OUT("Invalid shader size");
+		return nullptr;
+	}
+
+	ID3DBlob* blob;
+	ID3DBlob* error;
+
+	u32 compileFlags = 0;
+	#ifdef KGFX_DEBUG
+	compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+	#endif
+
+	const char* entry = (shaderDesc.entryName == nullptr) ? "main" : shaderDesc.entryName;
+	std::string target = "*s_5_0";
+	if (shaderDesc.type == KGFX_SHADERTYPE_VERTEX) {
+		target[0] = 'v';
+	} else if (shaderDesc.type == KGFX_SHADERTYPE_FRAGMENT) {
+		target[0] = 'p';
+	} else {
+		DEBUG_OUT("Invalid KGFXshadertype");
+		return nullptr;
+	}
+
+	HRESULT hr = D3DCompile(shaderDesc.pData, shaderDesc.size, nullptr, nullptr, nullptr, entry, target.c_str(), compileFlags, 0, &blob, &error);
+	if (FAILED(hr)) {
+		char* buf = new char[error->GetBufferSize()];
+		memcpy(buf, error->GetBufferPointer(), error->GetBufferSize());
+		DEBUG_OUTF("Failed to compile shader: {}", buf);
+		delete[] buf;
+		RELEASE(error);
+		return nullptr;
+	}
+
+	RELEASE(error);
+
+	KGFXshader shader = new KGFXshader_t{};
+	shader->blob = blob;
+	shader->type = shaderDesc.type;
+	return shader;
+}
+
+KGFXpipeline D3D12::createPipeline(KGFXpipelinedesc pipelineDesc) {
+	if (pipelineDesc.pShaders == nullptr) {
+		DEBUG_OUT("Invalid KGFXpipelinedesc");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipelineDesc.shaderCount == 0) {
+		DEBUG_OUT("Invalid KGFXpipelinedesc");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipelineDesc.pShaders[0] == nullptr) {
+		DEBUG_OUT("Invalid KGFXpipelinedesc");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipelineDesc.cullMode > KGFX_CULLMODE_MAX || pipelineDesc.cullMode < KGFX_CULLMODE_MIN) {
+		DEBUG_OUT("Invalid KGFXcullmode");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipelineDesc.fillMode > KGFX_FILLMODE_MAX || pipelineDesc.fillMode < KGFX_FILLMODE_MIN) {
+		DEBUG_OUT("Invalid KGFXfillmode");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipelineDesc.frontFace > KGFX_FRONTFACE_MAX || pipelineDesc.frontFace < KGFX_FRONTFACE_MIN) {
+		DEBUG_OUT("Invalid KGFXfrontface");
+		return KGFX_HANDLE_NULL;
+	}
+
+	if (pipelineDesc.topology > KGFX_TOPOLOGY_MAX || pipelineDesc.topology < KGFX_TOPOLOGY_MIN) {
+		DEBUG_OUT("Invalid KGFXtopology");
+		return KGFX_HANDLE_NULL;
+	}
+
+	u32 totalAttributeCount = 0;
+	for (u32 i = 0; i < pipelineDesc.layout.bindingCount; ++i) {
+		totalAttributeCount += pipelineDesc.layout.pBindings[i].attributeCount;
+	}
+
+	std::vector<D3D12_INPUT_ELEMENT_DESC> inputElementDescs(pipelineDesc.layout.pBindings[0].attributeCount);
+
+	u32 currentElementIndex = 0;
+	for (u32 i = 0; i < pipelineDesc.layout.bindingCount; ++i) {
+		for (u32 j = 0; j < pipelineDesc.layout.pBindings[i].attributeCount; ++j) {
+			inputElementDescs[currentElementIndex].SemanticName = pipelineDesc.layout.pBindings[i].pAttributes[j].semanticName;
+			inputElementDescs[currentElementIndex].SemanticIndex = j;
+			inputElementDescs[currentElementIndex].Format = datatypeToDxgiFormat(pipelineDesc.layout.pBindings[i].pAttributes[j].type);
+			inputElementDescs[currentElementIndex].InputSlot = i;
+			inputElementDescs[currentElementIndex].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+			inputElementDescs[currentElementIndex].InputSlotClass = (pipelineDesc.layout.pBindings[i].inputRate == KGFX_VERTEX_INPUT_RATE_VERTEX) ? D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA : D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
+			inputElementDescs[currentElementIndex].InstanceDataStepRate = 0;
+			++currentElementIndex;
+		}
+	}
+
+	D3D12_RASTERIZER_DESC rasterizerDesc = {};
+	rasterizerDesc.FillMode = (pipelineDesc.fillMode == KGFX_FILLMODE_SOLID) ? D3D12_FILL_MODE_SOLID : D3D12_FILL_MODE_WIREFRAME;
+	rasterizerDesc.CullMode = (pipelineDesc.cullMode == KGFX_CULLMODE_BACK) ? D3D12_CULL_MODE_BACK : (pipelineDesc.cullMode == KGFX_CULLMODE_FRONT) ? D3D12_CULL_MODE_FRONT : D3D12_CULL_MODE_NONE;
+	rasterizerDesc.FrontCounterClockwise = (pipelineDesc.frontFace == KGFX_FRONTFACE_CCW);
+	rasterizerDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
+	rasterizerDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
+	rasterizerDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+	rasterizerDesc.SlopeScaledDepthBias = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+	rasterizerDesc.DepthClipEnable = TRUE;
+	rasterizerDesc.MultisampleEnable = FALSE;
+	rasterizerDesc.AntialiasedLineEnable = FALSE;
+	rasterizerDesc.ForcedSampleCount = 0;
+	rasterizerDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+
+	D3D12_BLEND_DESC blendDesc = {};
+	blendDesc.AlphaToCoverageEnable = FALSE;
+	blendDesc.IndependentBlendEnable = FALSE;
+	blendDesc.RenderTarget[0].BlendEnable = FALSE;
+	blendDesc.RenderTarget[0].LogicOpEnable = FALSE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ZERO;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].LogicOp = D3D12_LOGIC_OP_NOOP;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	D3D12_DEPTH_STENCIL_DESC depthStencilDesc = {};
+	depthStencilDesc.DepthEnable = FALSE;
+	depthStencilDesc.StencilEnable = FALSE;
+
+	D3D12_SHADER_BYTECODE bytecodes[3] = {};
+	for (u32 i = 0; i < pipelineDesc.shaderCount; ++i) {
+		u32 index = 0;
+		if (pipelineDesc.pShaders[i]->type == KGFX_SHADERTYPE_VERTEX) {
+			index = 0;
+		} else if (pipelineDesc.pShaders[i]->type == KGFX_SHADERTYPE_FRAGMENT) {
+			index = 1;
+		} else if (pipelineDesc.pShaders[i]->type == KGFX_SHADERTYPE_GEOMETRY) {
+			index = 2;
+		} else {
+			DEBUG_OUT("Invalid KGFXshadertype");
+			return KGFX_HANDLE_NULL;
+		}
+
+		if (bytecodes[index].pShaderBytecode != nullptr || bytecodes[i].BytecodeLength != 0) {
+			DEBUG_OUTF("More than one {} shader provided in KGFXpipelinedesc", (index == 0) ? "vertex" : (index == 1) ? "fragment" : "geometry");
+			return KGFX_HANDLE_NULL;
+		}
+
+		bytecodes[index].pShaderBytecode = pipelineDesc.pShaders[i]->blob->GetBufferPointer();
+		bytecodes[index].BytecodeLength = pipelineDesc.pShaders[i]->blob->GetBufferSize();
+	}
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+	psoDesc.pRootSignature = rootSignature;
+	psoDesc.VS = bytecodes[0];
+	psoDesc.PS = bytecodes[1];
+	psoDesc.GS = bytecodes[2];
+	psoDesc.StreamOutput = { nullptr, 0, nullptr, 0, 0 };
+	psoDesc.BlendState = blendDesc;
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.RasterizerState = rasterizerDesc;
+	psoDesc.DepthStencilState = depthStencilDesc;
+	psoDesc.InputLayout = { inputElementDescs.data(), static_cast<u32>(inputElementDescs.size()) };
+	psoDesc.PrimitiveTopologyType = (pipelineDesc.topology == KGFX_TOPOLOGY_POINTS) ? D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT : (pipelineDesc.topology == KGFX_TOPOLOGY_LINES) ? D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE : D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+	psoDesc.SampleDesc.Count = 1;
+	psoDesc.SampleDesc.Quality = 0;
+
+	ID3D12PipelineState* pipeline;
+	HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create D3D12 pipeline state");
+		return KGFX_HANDLE_NULL;
+	}
+
+	ID3D12GraphicsCommandList* commandList;
+	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipeline, IID_PPV_ARGS(&commandList));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create D3D12 command list");
+		RELEASE(pipeline);
+		return KGFX_HANDLE_NULL;
+	}
+
+	commandList->Close();
+
+	KGFXpipeline kgfxPipeline = new KGFXpipeline_t{};
+	kgfxPipeline->pipeline = pipeline;
+	kgfxPipeline->commandList = commandList;
+	return kgfxPipeline;
+}
+
+KGFXresult D3D12::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
+	return KGFX_SUCCESS;
+}
+
+void D3D12::pipelineUnbindDescriptorSet(KGFXpipeline pipeline, struct KGFXdescriptorset_t& set) {
+
+}
+
+KGFXpipelinemesh D3D12::pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
+	return KGFX_HANDLE_NULL;
+}
+
+void D3D12::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh) {
+
+}
+
+KGFXpipelinetexture D3D12::pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
+	return KGFX_HANDLE_NULL;
+}
+
+void D3D12::pipelineUnbindDescriptorSetTexture(KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture) {
+
+}
+
+KGFXuniformbuffer D3D12::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
+	return KGFX_HANDLE_NULL;
+}
+
+void D3D12::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+
+}
+
+void D3D12::destroyShader(KGFXshader shader) {
+	if (shader == nullptr) {
+		DEBUG_OUT("Invalid KGFXshader");
+		return;
+	}
+
+	RELEASE(shader->blob);
+	delete shader;
+}
+
+void D3D12::destroyPipeline(KGFXpipeline pipeline) {
+	if (pipeline == nullptr) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	RELEASE(pipeline->commandList);
+	RELEASE(pipeline->pipeline);
+	delete pipeline;
+}
+
+void D3D12::destroyBuffer(KGFXbuffer buffer) {
+
+}
+
+void D3D12::destroyMesh(KGFXmesh mesh) {
+
+}
+
+void D3D12::destroyTexture(KGFXtexture texture) {
+
+}
+
+void D3D12::destroySampler(KGFXsampler sampler) {
+
 }

@@ -1,0 +1,7 @@
+﻿  kgfx_d3d12.cpp
+C:\Users\nik\source\repos\kgfx\kgfx\src\kgfx\kgfx_d3d12.cpp(596,12): warning C4244: 'initializing': conversion from 'u64' to 'u32', possible loss of data
+C:\Users\nik\source\repos\kgfx\kgfx\src\kgfx\kgfx_d3d12.cpp(668,13): warning C4244: 'initializing': conversion from 'u64' to 'u32', possible loss of data
+C:\Users\nik\source\repos\kgfx\kgfx\src\kgfx\kgfx_d3d12.cpp(712,38): warning C4244: '+=': conversion from 'SIZE_T' to 'u32', possible loss of data
+C:\Users\nik\source\repos\kgfx\kgfx\src\kgfx\kgfx_d3d12.cpp(772,32): warning C4244: '=': conversion from 'FLOAT' to 'UINT', possible loss of data
+C:\Users\nik\source\repos\kgfx\kgfx\src\kgfx\kgfx_d3d12.cpp(773,33): warning C4244: '=': conversion from 'FLOAT' to 'UINT', possible loss of data
+  kgfx.vcxproj -> C:\Users\nik\source\repos\kgfx\x64\Debug D3D12\kgfx.exe
