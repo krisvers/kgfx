@@ -69,7 +69,7 @@ static u8 key_up(int key) {
 }
 
 int example_current() {
-	if (!glfwInit()) {
+	/*if (!glfwInit()) {
 		return 1;
 	}
 
@@ -458,5 +458,6 @@ int example_current() {
 	kgfxDestroyBuffer(ctx, buffer);
 	kgfxDestroyPipeline(ctx, pipeline);
 	kgfxDestroyContext(ctx);
+	*/
 	return 0;
 }

@@ -848,17 +848,17 @@ VkResult Vulkan::init() {
 	vkEnumerateInstanceLayerProperties(&availablelayerCount, availablelayers.data());
 
 	for (u32 i = 0; i < layers.size(); ++i) {
-		const char*& ext = layers[i];
+		const char*& lay = layers[i];
 		bool found = false;
 		for (VkLayerProperties& avail : availablelayers) {
-			if (strcmp(avail.layerName, ext) != 0) {
+			if (strcmp(avail.layerName, lay) == 0) {
 				found = true;
 				break;
 			}
 		}
 
 		if (!found) {
-			DEBUG_OUTF("Layer {} not found, removing from requested layers", ext);
+			DEBUG_OUTF("Layer {} not found, removing from requested layers", lay);
 			layers.erase(layers.begin() + i);
 		}
 	}

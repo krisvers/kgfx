@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "examples.h"
 
 #define EXAMPLE_COUNT 5
@@ -20,7 +21,7 @@ struct example_entry examples[EXAMPLE_COUNT] = {
 	{ .func = example_hlsl, .name = "hlsl" },
 };
 
-typedef void (*flag_func)(void);
+typedef void (*flag_func)(int argc, char** argv);
 struct flag_entry {
 	const char* name;
 	const char* desc;
@@ -28,9 +29,9 @@ struct flag_entry {
 	unsigned long long int hash;
 };
 
-void flag_help(void);
-void flag_usage(void);
-void flag_list(void);
+void flag_help(int argc, char** argv);
+void flag_usage(int argc, char** argv);
+void flag_list(int argc, char** argv);
 struct flag_entry flags[FLAG_COUNT] = {
 	{ .func = flag_help, .name = "help", .desc = "Lists all flags and descriptions" },
 	{ .func = flag_usage, .name = "usage", .desc = "Provides usage message for this program" },
@@ -93,7 +94,7 @@ int main(int argc, char** argv) {
 					unsigned long long int hash = djbhash(buffer);
 					for (unsigned int k = 0; k < FLAG_COUNT; ++k) {
 						if (flags[k].hash == hash) {
-							flags[k].func();
+							flags[k].func(0, NULL);
 							hash = 0;
 							break;
 						}
@@ -159,19 +160,19 @@ int main(int argc, char** argv) {
 	}
 }
 
-void flag_help(void) {
+void flag_help(int argc, char** argv) {
 	printf("Flags:\n");
 	for (unsigned int i = 0; i < FLAG_COUNT; ++i) {
 		printf("    -%s: %s\n", flags[i].name, flags[i].desc);
 	}
 }
 
-void flag_usage(void) {
+void flag_usage(int argc, char** argv) {
 	printf("Usage:\n    %s {flags} \"[example name]\"\n  or\n    %s {flags} [example number]\n", program_name, program_name);
 	printf("Flags are stored in 1 argument only \"-flag1,flag2,flag3\"\n");
 }
 
-void flag_list(void) {
+void flag_list(int argc, char** argv) {
 	printf("Examples:\n");
 	for (unsigned int i = 0; i < EXAMPLE_COUNT; ++i) {
 		printf("    [%u]: %s\n", i, examples[i].name);
