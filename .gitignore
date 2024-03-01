@@ -1,6 +1,10 @@
 Debug/
+Debug*/
 Release/
+Release*/
 *.vcxproj
 *.vcxproj.*
 obj/
 build/
+./x86/
+./x64/
