@@ -27,3 +27,11 @@ KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window) {
 		return win;
 	}
 }
+
+void kgfxWindowFromGLFWToPointer(GLFWwindow* window, KGFXwindow* outWindow) {
+	if (outWindow == NULL) {
+		return;	
+	}
+	KGFXwindow w = kgfxWindowFromGLFW(window);
+	*outWindow = w;
+}

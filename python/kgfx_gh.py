@@ -30,22 +30,16 @@ class KGFXwindowCocoa(ctypes.Structure):
 
 if sys.platform == 'win32':
     def kgfx_window_from_glfw(window) -> KGFXwindowWIN:
-        _kgfx_window = _kgfx_gh.kgfxWindowFromGLFW(window)
         kgfx_window = KGFXwindowWIN()
-        kgfx_window.hwnd = _kgfx_window.hwnd
+        _kgfx_gh.kgfxWindowFromGLFWToPointer(window, ctypes.pointer(kgfx_window))
         return kgfx_window
 elif sys.platform == 'darwin':
     def kgfx_window_from_glfw(window) -> KGFXwindowCocoa:
-        _kgfx_window = _kgfx_gh.kgfxWindowFromGLFW(window)
         kgfx_window = KGFXwindowCocoa()
-        kgfx_window.window = _kgfx_window.window
-        kgfx_window.contentView = _kgfx_window.contentView
-        kgfx_window.layer = _kgfx_window.layer
+        _kgfx_gh.kgfxWindowFromGLFWToPointer(window, ctypes.pointer(kgfx_window))
         return kgfx_window
 else:
     def kgfx_window_from_glfw(window) -> KGFXwindowXlib:
-        _kgfx_window = _kgfx_gh.kgfxWindowFromGLFW(window)
         kgfx_window = KGFXwindowXlib()
-        kgfx_window.window = _kgfx_window.window
-        kgfx_window.display = _kgfx_window.display
+        _kgfx_gh.kgfxWindowFromGLFWToPointer(window, ctypes.pointer(kgfx_window))
         return kgfx_window

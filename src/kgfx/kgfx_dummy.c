@@ -1,10 +1,12 @@
 #include <kgfx/kgfx.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static s8 dummy = 0;
 
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
 	if (context == NULL) {
+		printf("Invalid out pointer to context\n");
 		return KGFX_INVALID_ARGUMENT;
 	}
 
@@ -13,15 +15,12 @@ KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* contex
 }
 
 void kgfxDestroyContext(KGFXcontext ctx) {
-	if (ctx == NULL) {
-		return KGFX_INVALID_CONTEXT;
-	}
-
 	return;
 }
 
 KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_HANDLE_NULL;
 	}
 
@@ -29,19 +28,12 @@ KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc) {
 }
 
 void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
-	if (ctx == NULL) {
-		return KGFX_INVALID_CONTEXT;
-	}
-
-	if (shader == NULL) {
-		return KGFX_INVALID_ARGUMENT;
-	}
-
 	return;
 }
 
 KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_HANDLE_NULL;
 	}
 
@@ -54,6 +46,7 @@ void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline) {
 
 KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_HANDLE_NULL;
 	}
 
@@ -68,6 +61,7 @@ KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
 
 KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* data) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_INVALID_CONTEXT;
 	}
 
@@ -84,11 +78,12 @@ KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* 
 
 void* kgfxBufferMap(KGFXcontext ctx, KGFXbuffer buffer) {
 	if (ctx == NULL) {
-		return KGFX_INVALID_CONTEXT;
+		printf("Invalid context\n");
+		return NULL;
 	}
 
 	if (buffer == NULL) {
-		return KGFX_INVALID_ARGUMENT;
+		return NULL;
 	}
 
 	return (u32*) ((usize) buffer + sizeof(u32));
@@ -100,6 +95,7 @@ void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer) {
 
 KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_INVALID_CONTEXT;
 	}
 
@@ -116,6 +112,7 @@ KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcB
 
 void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return;
 	}
 
@@ -129,6 +126,7 @@ void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
 
 KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_HANDLE_NULL;
 	}
 
@@ -137,6 +135,7 @@ KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
 
 KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_INVALID_CONTEXT;
 	}
 
@@ -157,6 +156,7 @@ void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
 
 KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_HANDLE_NULL;
 	}
 
@@ -164,19 +164,12 @@ KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc) {
 }
 
 void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler) {
-	if (ctx == NULL) {
-		return KGFX_INVALID_CONTEXT;
-	}
-
-	if (sampler == NULL) {
-		return KGFX_INVALID_ARGUMENT;
-	}
-
 	return;
 }
 
 KGFXcommandlist kgfxCreateCommandList(KGFXcontext ctx) {
 	if (ctx == NULL) {
+		printf("Invalid context\n");
 		return KGFX_HANDLE_NULL;
 	}
 

@@ -25,6 +25,9 @@ mac-vulkan:
 mac-vulkan-dynamic:
 	clang++ -dynamic -shared -fPIC -std=c++14 src/kgfx/kgfx_vulkan.cpp -o build/libkgfx.dylib $(FLAGS) $(MAC_LIBS) -Wno-switch
 
+mac-dummy-dynamic:
+	clang -dynamic -shared -fPIC src/kgfx/kgfx_dummy.c -o build/libkgfx.dylib $(FLAGS) -Wno-switch
+
 mac-kgfx_gh-dynamic:
 	clang -dynamic -shared -fPIC src/kgfx_gh/kgfx_gh_cocoa.m -o build/libkgfx_gh.dylib $(FLAGS) -Llib/mac -lglfw3 -framework IOKit -framework Cocoa -framework QuartzCore
 
