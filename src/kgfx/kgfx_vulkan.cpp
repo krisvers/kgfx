@@ -29,6 +29,7 @@
 #include <cstring>
 
 #define KGFX_IMPL_VER KGFX_MAKE_VERSION(0, 1, 0)
+#define KGFX_BACKEND KGFX_BACKEND_VULKAN
 #define KGFX_VK_TARGET_FRAMES 2
 
 #ifdef KGFX_DEBUG
@@ -124,7 +125,7 @@ struct Vulkan {
 	void pipelineUnbindDescriptorSetTexture(KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture);
 
 	KGFXuniformbuffer pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset);
-	void pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
+	void pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer);
 
 	void destroyShader(KGFXshader shader);
 	void destroyPipeline(KGFXpipeline pipeline);
@@ -472,6 +473,10 @@ u32 kgfxGetImplementationVersion() {
 	return KGFX_IMPL_VER;
 }
 
+KGFXbackend kgfxGetBackend(void) {
+	return KGFX_BACKEND;
+}
+
 void kgfxRender(KGFXcontext ctx, KGFXpipeline pipeline) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
@@ -590,7 +595,7 @@ KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipel
 	return ctx->vulkan.pipelineBindDescriptorSetBuffer(pipeline, buffer, binding, offset);
 }
 
-void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer) {
 	if (ctx == KGFX_HANDLE_NULL) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return;
@@ -2510,7 +2515,7 @@ KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline,
 	}
 
 	KGFXdescriptorset_t descriptorSet = {};
-	KGFXuniformbuffer uniformBuffer = new KGFXuniformbuffer_t;
+	KGFXbuffer buffer = new KGFXuniformbuffer_t;
 	uniformBuffer->id = binding;
 	uniformBuffer->buffer = buffer;
 	uniformBuffer->binding = binding;
@@ -2528,7 +2533,7 @@ KGFXuniformbuffer Vulkan::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline,
 	return uniformBuffer;
 }
 
-void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
+void Vulkan::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer) {
 	u32 id = uniformBuffer->id;
 	if (id >= pipeline->descriptorSets.size()) {
 		DEBUG_OUT("Invalid KGFXdescriptorset");

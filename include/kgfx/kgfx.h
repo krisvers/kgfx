@@ -70,6 +70,17 @@ typedef enum {
 	KGFX_SIZE_TOO_LARGE = 8,
 } KGFXresult;
 
+typedef enum {
+	KGFX_BACKEND_UNKNOWN = 0,
+	KGFX_BACKEND_GENERIC = KGFX_BACKEND_UNKNOWN,
+	KGFX_BACKEND_VULKAN = 1,
+	KGFX_BACKEND_D3D12 = 2,
+	KGFX_BACKEND_METAL = 3,
+	KGFX_BACKEND_COUNT,
+	KGFX_BACKEND_MAX = KGFX_BACKEND_COUNT - 1,
+	KGFX_BACKEND_MIN = KGFX_BACKEND_UNKNOWN,
+} KGFXbackend;
+
 /* pipeline related enumerations */
 typedef enum {
 	KGFX_SHADERTYPE_VERTEX = 0,
@@ -83,10 +94,9 @@ typedef enum {
 
 typedef enum {
 	KGFX_MEDIUM_SPIRV = 0,
-	KGFX_MEDIUM_DIXL = 1,
-	KGFX_MEDIUM_GLSL = 2,
-	KGFX_MEDIUM_HLSL = 3,
-	KGFX_MEDIUM_MSL = 4,
+	KGFX_MEDIUM_GLSL = 1,
+	KGFX_MEDIUM_HLSL = 2,
+	KGFX_MEDIUM_MSL = 3,
 } KGFXshadermedium;
 
 typedef enum {
@@ -180,14 +190,6 @@ typedef enum {
 } KGFXbufferusageflags;
 
 typedef enum {
-	KGFX_MESH_BUFFER_BINDPOINT_VERTEX = 0,
-	KGFX_MESH_BUFFER_BINDPOINT_INDEX = 1,
-	KGFX_MESH_BUFFER_BINDPOINT_COUNT,
-	KGFX_MESH_BUFFER_BINDPOINT_MAX = KGFX_MESH_BUFFER_BINDPOINT_COUNT - 1,
-	KGFX_MESH_BUFFER_BINDPOINT_MIN = KGFX_MESH_BUFFER_BINDPOINT_VERTEX,
-} KGFXmeshbufferbindpoint;
-
-typedef enum {
 	KGFX_TOPOLOGY_POINTS = 0,
 	KGFX_TOPOLOGY_LINES = 1,
 	KGFX_TOPOLOGY_TRIANGLES = 2,
@@ -230,21 +232,20 @@ typedef enum {
 
 #define KGFX_IS_SUCCESSFUL(result) ((result) == KGFX_SUCCESS)
 
-KGFX_DEFINE_HANDLE(KGFXcontext);
+KGFX_DEFINE_HANDLE(KGFXcontext)
 
 /* pipeline related handles */
-KGFX_DEFINE_HANDLE(KGFXpipeline);
-KGFX_DEFINE_HANDLE(KGFXrenderpass);
-KGFX_DEFINE_HANDLE(KGFXshader);
+KGFX_DEFINE_HANDLE(KGFXpipeline)
+KGFX_DEFINE_HANDLE(KGFXrenderpass)
+KGFX_DEFINE_HANDLE(KGFXshader)
+
+/* command list */
+KGFX_DEFINE_HANDLE(KGFXcommandlist)
 
 /* buffer related handles */
-KGFX_DEFINE_HANDLE(KGFXbuffer);
-KGFX_DEFINE_HANDLE(KGFXmesh);
-KGFX_DEFINE_HANDLE(KGFXpipelinemesh);
-KGFX_DEFINE_HANDLE(KGFXuniformbuffer);
-KGFX_DEFINE_HANDLE(KGFXtexture);
-KGFX_DEFINE_HANDLE(KGFXsampler);
-KGFX_DEFINE_HANDLE(KGFXpipelinetexture);
+KGFX_DEFINE_HANDLE(KGFXbuffer)
+KGFX_DEFINE_HANDLE(KGFXtexture)
+KGFX_DEFINE_HANDLE(KGFXsampler)
 
 /* pipeline related descriptors */
 typedef struct {
@@ -273,6 +274,7 @@ typedef struct {
 	KGFXbindpoint bindpoint;
 	u32 binding;
 	KGFXdescriptorusage usage;
+	u32 size;
 } KGFXdescriptorsetdesc;
 
 typedef struct {
@@ -299,17 +301,6 @@ typedef struct {
 	u32 size;
 	void* pData;
 } KGFXbufferdesc;
-
-typedef struct {
-	KGFXbuffer buffer;
-	KGFXmeshbufferbindpoint bindpoint;
-	u32 offset;
-} KGFXmeshbuffer;
-
-typedef struct {
-	KGFXmeshbuffer* pBuffers;
-	u32 bufferCount;
-} KGFXmeshdesc;
 
 typedef struct {
 	KGFXtextureformat format;
@@ -351,18 +342,6 @@ KGFX_API void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader);
 
 KGFX_API KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc);
 
-KGFX_API KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
-
-KGFX_API void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh);
-
-KGFX_API KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset);
-
-KGFX_API void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
-
-KGFX_API KGFXpipelinetexture kgfxPipelineBindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding);
-
-KGFX_API void kgfxPipelineUnbindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture);
-
 KGFX_API void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline);
 
 KGFX_API KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc);
@@ -377,10 +356,6 @@ KGFX_API KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbu
 
 KGFX_API void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer);
 
-KGFX_API KGFXmesh kgfxCreateMesh(KGFXcontext ctx, KGFXmeshdesc meshDesc);
-
-KGFX_API void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh);
-
 KGFX_API KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc);
 
 KGFX_API KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset);
@@ -391,10 +366,34 @@ KGFX_API KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerD
 
 KGFX_API void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler);
 
-/* returns implementation version */
-KGFX_API u32 kgfxGetImplementationVersion();
+KGFX_API KGFXcommandlist kgfxCreateCommandList(KGFXcontext ctx);
 
-KGFX_API void kgfxRender(KGFXcontext ctx, KGFXpipeline pipeline);
+KGFX_API void kgfxCommandReset(KGFXcontext ctx, KGFXcommandlist commandList);
+
+KGFX_API void kgfxCommandBindPipeline(KGFXcontext ctx, KGFXcommandlist commandList, KGFXpipeline pipeline);
+
+KGFX_API void kgfxCommandBindVertexBuffer(KGFXcontext ctx, KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding);
+
+KGFX_API void kgfxCommandBindIndexBuffer(KGFXcontext ctx, KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding);
+
+KGFX_API void kgfxCommandBindDescriptorSetBuffer(KGFXcontext ctx, KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding);
+
+KGFX_API void kgfxCommandBindDescriptorSetTexture(KGFXcontext ctx, KGFXcommandlist commandList, KGFXtexture texture, KGFXsampler sampler, u32 binding);
+
+KGFX_API void kgfxCommandDraw(KGFXcontext ctx, KGFXcommandlist commandList, u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance);
+
+KGFX_API void kgfxCommandDrawIndexed(KGFXcontext ctx, KGFXcommandlist commandList, u32 indexCount, u32 instanceCount, u32 firstIndex, s32 vertexOffset, u32 firstInstance);
+
+KGFX_API void kgfxCommandPresent(KGFXcontext ctx, KGFXcommandlist commandList);
+
+KGFX_API void kgfxCommandListSubmit(KGFXcontext ctx, KGFXcommandlist commandList);
+
+KGFX_API void kgfxDestroyCommandList(KGFXcontext ctx, KGFXcommandlist commandList);
+
+/* returns implementation version */
+KGFX_API u32 kgfxGetImplementationVersion(void);
+
+KGFX_API KGFXbackend kgfxGetBackend(void);
 
 #ifdef __cplusplus
 }

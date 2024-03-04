@@ -4,18 +4,25 @@
 #include <Windows.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+
 #ifdef KGFX_DEBUG
+//#define KGFX_D3D12_VALIDATION
+#define KGFX_D3D12_BREADCRUMBS
+#define KGFX_LOG_TO_FILE "kgfx_d3d12.log"
 #include <dxgidebug.h>
 #endif
 #include <d3dcompiler.h>
 
 #include <vector>
+#include <unordered_map>
 #include <string>
 #include <iostream>
 #include <sstream>
 #include <limits>
+#include <type_traits>
 
 #define KGFX_IMPL_VER KGFX_MAKE_VERSION(0, 1, 0)
+#define KGFX_BACKEND KGFX_BACKEND_D3D12
 #define KGFX_D3D_TARGET_FRAMES 2
 
 #ifdef KGFX_DEBUG
@@ -28,11 +35,91 @@
 #define RELEASE(obj) if (obj != nullptr) { reinterpret_cast<IUnknown*>(obj)->Release(); }
 #endif
 
+static usize contextCount = 0;
+
+#ifdef KGFX_LOG_TO_FILE
+static FILE* logFile = nullptr;
+static void debugFuncToFile(std::wstring string) {
+	if (logFile == nullptr) {
+		fopen_s(&logFile, KGFX_LOG_TO_FILE, "w");
+		if (logFile == nullptr) {
+			return;
+		}
+		freopen_s(&logFile, KGFX_LOG_TO_FILE, "a", logFile);
+	}
+
+	fwprintf(logFile, L"%s\n", string.c_str());
+	fflush(logFile);
+}
+static void debugCloseLogFile() {
+	if (logFile != nullptr) {
+		fclose(logFile);
+	}
+}
+#endif
+
+static void debugFuncConcat(std::wstringstream& stream, std::wstring& format) {
+	stream << format;
+}
+
+template<typename T, typename... Types>
+static void debugFuncConcat(std::wstringstream& stream, std::wstring& format, T& arg, Types&... args) {
+	usize index = format.find(L"{}");
+	if (index == std::wstring::npos) {
+		stream << format;
+		return;
+	}
+
+	stream << std::wstring(format.begin(), format.begin() + index);
+	stream << arg;
+	
+	if (index + 2 < format.size()) {
+		format = std::wstring(format.begin() + index + 2, format.end());
+		debugFuncConcat(stream, format, args...);
+	}
+}
+
+static void debugFunc(const char* format) {
+	size_t len = ::MultiByteToWideChar(CP_UTF8, 0, format, strlen(format), nullptr, 0);
+	std::wstring fmt(len, L'\0');
+	::MultiByteToWideChar(CP_UTF8, 0, format, strlen(format), &fmt[0], len);
+
+	std::wcout << L"KGFX debug: " << fmt << std::endl;
+	#ifdef KGFX_LOG_TO_FILE
+	debugFuncToFile(fmt);
+	#endif
+}
+
+template<typename... Types>
+static void debugFunc(const char* format, Types... types) {
+	size_t len = ::MultiByteToWideChar(CP_UTF8, 0, format, strlen(format), nullptr, 0);
+	std::wstring fmt(len, L'\0');
+	::MultiByteToWideChar(CP_UTF8, 0, format, strlen(format), &fmt[0], len);
+	std::wstringstream stream;
+
+	debugFuncConcat(stream, fmt, types...);
+
+	std::wcout << L"KGFX debug: " << stream.str() << std::endl;
+	#ifdef KGFX_LOG_TO_FILE
+	debugFuncToFile(stream.str());
+	#endif
+}
+
+#ifdef KGFX_D3D12_BREADCRUMBS
+static std::wstring breadcrumbOperationToString(D3D12_AUTO_BREADCRUMB_OP op) {
+	switch (op) { case D3D12_AUTO_BREADCRUMB_OP_SETMARKER: return L"D3D12_AUTO_BREADCRUMB_OP_SETMARKER"; case D3D12_AUTO_BREADCRUMB_OP_BEGINEVENT: return L"D3D12_AUTO_BREADCRUMB_OP_BEGINEVENT"; case D3D12_AUTO_BREADCRUMB_OP_ENDEVENT: return L"D3D12_AUTO_BREADCRUMB_OP_ENDEVENT"; case D3D12_AUTO_BREADCRUMB_OP_DRAWINSTANCED: return L"D3D12_AUTO_BREADCRUMB_OP_DRAWINSTANCED"; case D3D12_AUTO_BREADCRUMB_OP_DRAWINDEXEDINSTANCED: return L"D3D12_AUTO_BREADCRUMB_OP_DRAWINDEXEDINSTANCED"; case D3D12_AUTO_BREADCRUMB_OP_EXECUTEINDIRECT: return L"D3D12_AUTO_BREADCRUMB_OP_EXECUTEINDIRECT"; case D3D12_AUTO_BREADCRUMB_OP_DISPATCH: return L"D3D12_AUTO_BREADCRUMB_OP_DISPATCH"; case D3D12_AUTO_BREADCRUMB_OP_COPYBUFFERREGION: return L"D3D12_AUTO_BREADCRUMB_OP_COPYBUFFERREGION"; case D3D12_AUTO_BREADCRUMB_OP_COPYTEXTUREREGION: return L"D3D12_AUTO_BREADCRUMB_OP_COPYTEXTUREREGION"; case D3D12_AUTO_BREADCRUMB_OP_COPYRESOURCE: return L"D3D12_AUTO_BREADCRUMB_OP_COPYRESOURCE"; case D3D12_AUTO_BREADCRUMB_OP_COPYTILES: return L"D3D12_AUTO_BREADCRUMB_OP_COPYTILES"; case D3D12_AUTO_BREADCRUMB_OP_RESOLVESUBRESOURCE: return L"D3D12_AUTO_BREADCRUMB_OP_RESOLVESUBRESOURCE"; case D3D12_AUTO_BREADCRUMB_OP_CLEARRENDERTARGETVIEW: return L"D3D12_AUTO_BREADCRUMB_OP_CLEARRENDERTARGETVIEW"; case D3D12_AUTO_BREADCRUMB_OP_CLEARUNORDEREDACCESSVIEW: return L"D3D12_AUTO_BREADCRUMB_OP_CLEARUNORDEREDACCESSVIEW"; case D3D12_AUTO_BREADCRUMB_OP_CLEARDEPTHSTENCILVIEW: return L"D3D12_AUTO_BREADCRUMB_OP_CLEARDEPTHSTENCILVIEW"; case D3D12_AUTO_BREADCRUMB_OP_RESOURCEBARRIER: return L"D3D12_AUTO_BREADCRUMB_OP_RESOURCEBARRIER"; case D3D12_AUTO_BREADCRUMB_OP_EXECUTEBUNDLE: return L"D3D12_AUTO_BREADCRUMB_OP_EXECUTEBUNDLE"; case D3D12_AUTO_BREADCRUMB_OP_PRESENT: return L"D3D12_AUTO_BREADCRUMB_OP_PRESENT"; case D3D12_AUTO_BREADCRUMB_OP_RESOLVEQUERYDATA: return L"D3D12_AUTO_BREADCRUMB_OP_RESOLVEQUERYDATA"; case D3D12_AUTO_BREADCRUMB_OP_BEGINSUBMISSION: return L"D3D12_AUTO_BREADCRUMB_OP_BEGINSUBMISSION"; case D3D12_AUTO_BREADCRUMB_OP_ENDSUBMISSION: return L"D3D12_AUTO_BREADCRUMB_OP_ENDSUBMISSION"; case D3D12_AUTO_BREADCRUMB_OP_DECODEFRAME: return L"D3D12_AUTO_BREADCRUMB_OP_DECODEFRAME"; case D3D12_AUTO_BREADCRUMB_OP_PROCESSFRAMES: return L"D3D12_AUTO_BREADCRUMB_OP_PROCESSFRAMES"; case D3D12_AUTO_BREADCRUMB_OP_ATOMICCOPYBUFFERUINT: return L"D3D12_AUTO_BREADCRUMB_OP_ATOMICCOPYBUFFERUINT"; case D3D12_AUTO_BREADCRUMB_OP_ATOMICCOPYBUFFERUINT64: return L"D3D12_AUTO_BREADCRUMB_OP_ATOMICCOPYBUFFERUINT64"; case D3D12_AUTO_BREADCRUMB_OP_RESOLVESUBRESOURCEREGION: return L"D3D12_AUTO_BREADCRUMB_OP_RESOLVESUBRESOURCEREGION"; case D3D12_AUTO_BREADCRUMB_OP_WRITEBUFFERIMMEDIATE: return L"D3D12_AUTO_BREADCRUMB_OP_WRITEBUFFERIMMEDIATE"; case D3D12_AUTO_BREADCRUMB_OP_DECODEFRAME1: return L"D3D12_AUTO_BREADCRUMB_OP_DECODEFRAME1"; case D3D12_AUTO_BREADCRUMB_OP_SETPROTECTEDRESOURCESESSION: return L"D3D12_AUTO_BREADCRUMB_OP_SETPROTECTEDRESOURCESESSION"; case D3D12_AUTO_BREADCRUMB_OP_DECODEFRAME2: return L"D3D12_AUTO_BREADCRUMB_OP_DECODEFRAME2"; case D3D12_AUTO_BREADCRUMB_OP_PROCESSFRAMES1: return L"D3D12_AUTO_BREADCRUMB_OP_PROCESSFRAMES1"; case D3D12_AUTO_BREADCRUMB_OP_BUILDRAYTRACINGACCELERATIONSTRUCTURE: return L"D3D12_AUTO_BREADCRUMB_OP_BUILDRAYTRACINGACCELERATIONSTRUCTURE"; case D3D12_AUTO_BREADCRUMB_OP_EMITRAYTRACINGACCELERATIONSTRUCTUREPOSTBUILDINFO: return L"D3D12_AUTO_BREADCRUMB_OP_EMITRAYTRACINGACCELERATIONSTRUCTUREPOSTBUILDINFO"; case D3D12_AUTO_BREADCRUMB_OP_COPYRAYTRACINGACCELERATIONSTRUCTURE: return L"D3D12_AUTO_BREADCRUMB_OP_COPYRAYTRACINGACCELERATIONSTRUCTURE"; case D3D12_AUTO_BREADCRUMB_OP_DISPATCHRAYS: return L"D3D12_AUTO_BREADCRUMB_OP_DISPATCHRAYS"; case D3D12_AUTO_BREADCRUMB_OP_INITIALIZEMETACOMMAND: return L"D3D12_AUTO_BREADCRUMB_OP_INITIALIZEMETACOMMAND"; case D3D12_AUTO_BREADCRUMB_OP_EXECUTEMETACOMMAND: return L"D3D12_AUTO_BREADCRUMB_OP_EXECUTEMETACOMMAND"; case D3D12_AUTO_BREADCRUMB_OP_ESTIMATEMOTION: return L"D3D12_AUTO_BREADCRUMB_OP_ESTIMATEMOTION"; case D3D12_AUTO_BREADCRUMB_OP_RESOLVEMOTIONVECTORHEAP: return L"D3D12_AUTO_BREADCRUMB_OP_RESOLVEMOTIONVECTORHEAP"; case D3D12_AUTO_BREADCRUMB_OP_SETPIPELINESTATE1: return L"D3D12_AUTO_BREADCRUMB_OP_SETPIPELINESTATE1"; case D3D12_AUTO_BREADCRUMB_OP_INITIALIZEEXTENSIONCOMMAND: return L"D3D12_AUTO_BREADCRUMB_OP_INITIALIZEEXTENSIONCOMMAND"; case D3D12_AUTO_BREADCRUMB_OP_EXECUTEEXTENSIONCOMMAND: return L"D3D12_AUTO_BREADCRUMB_OP_EXECUTEEXTENSIONCOMMAND"; case D3D12_AUTO_BREADCRUMB_OP_DISPATCHMESH: return L"D3D12_AUTO_BREADCRUMB_OP_DISPATCHMESH"; case D3D12_AUTO_BREADCRUMB_OP_ENCODEFRAME: return L"D3D12_AUTO_BREADCRUMB_OP_ENCODEFRAME"; case D3D12_AUTO_BREADCRUMB_OP_RESOLVEENCODEROUTPUTMETADATA: return L"D3D12_AUTO_BREADCRUMB_OP_RESOLVEENCODEROUTPUTMETADATA"; }
+}
+
+static std::wstring dredAllocationTypeToString(D3D12_DRED_ALLOCATION_TYPE type) {
+	switch (type) { case D3D12_DRED_ALLOCATION_TYPE_COMMAND_QUEUE: return L"D3D12_DRED_ALLOCATION_TYPE_COMMAND_QUEUE"; case D3D12_DRED_ALLOCATION_TYPE_COMMAND_ALLOCATOR: return L"D3D12_DRED_ALLOCATION_TYPE_COMMAND_ALLOCATOR"; case D3D12_DRED_ALLOCATION_TYPE_PIPELINE_STATE: return L"D3D12_DRED_ALLOCATION_TYPE_PIPELINE_STATE"; case D3D12_DRED_ALLOCATION_TYPE_COMMAND_LIST: return L"D3D12_DRED_ALLOCATION_TYPE_COMMAND_LIST"; case D3D12_DRED_ALLOCATION_TYPE_FENCE: return L"D3D12_DRED_ALLOCATION_TYPE_FENCE"; case D3D12_DRED_ALLOCATION_TYPE_DESCRIPTOR_HEAP: return L"D3D12_DRED_ALLOCATION_TYPE_DESCRIPTOR_HEAP"; case D3D12_DRED_ALLOCATION_TYPE_HEAP: return L"D3D12_DRED_ALLOCATION_TYPE_HEAP"; case D3D12_DRED_ALLOCATION_TYPE_QUERY_HEAP: return L"D3D12_DRED_ALLOCATION_TYPE_QUERY_HEAP"; case D3D12_DRED_ALLOCATION_TYPE_COMMAND_SIGNATURE: return L"D3D12_DRED_ALLOCATION_TYPE_COMMAND_SIGNATURE"; case D3D12_DRED_ALLOCATION_TYPE_PIPELINE_LIBRARY: return L"D3D12_DRED_ALLOCATION_TYPE_PIPELINE_LIBRARY"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_DECODER: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_DECODER"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_PROCESSOR: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_PROCESSOR"; case D3D12_DRED_ALLOCATION_TYPE_RESOURCE: return L"D3D12_DRED_ALLOCATION_TYPE_RESOURCE"; case D3D12_DRED_ALLOCATION_TYPE_PASS: return L"D3D12_DRED_ALLOCATION_TYPE_PASS"; case D3D12_DRED_ALLOCATION_TYPE_CRYPTOSESSION: return L"D3D12_DRED_ALLOCATION_TYPE_CRYPTOSESSION"; case D3D12_DRED_ALLOCATION_TYPE_CRYPTOSESSIONPOLICY: return L"D3D12_DRED_ALLOCATION_TYPE_CRYPTOSESSIONPOLICY"; case D3D12_DRED_ALLOCATION_TYPE_PROTECTEDRESOURCESESSION: return L"D3D12_DRED_ALLOCATION_TYPE_PROTECTEDRESOURCESESSION"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_DECODER_HEAP: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_DECODER_HEAP"; case D3D12_DRED_ALLOCATION_TYPE_COMMAND_POOL: return L"D3D12_DRED_ALLOCATION_TYPE_COMMAND_POOL"; case D3D12_DRED_ALLOCATION_TYPE_COMMAND_RECORDER: return L"D3D12_DRED_ALLOCATION_TYPE_COMMAND_RECORDER"; case D3D12_DRED_ALLOCATION_TYPE_STATE_OBJECT: return L"D3D12_DRED_ALLOCATION_TYPE_STATE_OBJECT"; case D3D12_DRED_ALLOCATION_TYPE_METACOMMAND: return L"D3D12_DRED_ALLOCATION_TYPE_METACOMMAND"; case D3D12_DRED_ALLOCATION_TYPE_SCHEDULINGGROUP: return L"D3D12_DRED_ALLOCATION_TYPE_SCHEDULINGGROUP"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_MOTION_ESTIMATOR: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_MOTION_ESTIMATOR"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_MOTION_VECTOR_HEAP: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_MOTION_VECTOR_HEAP"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_EXTENSION_COMMAND: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_EXTENSION_COMMAND"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_ENCODER: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_ENCODER"; case D3D12_DRED_ALLOCATION_TYPE_VIDEO_ENCODER_HEAP: return L"D3D12_DRED_ALLOCATION_TYPE_VIDEO_ENCODER_HEAP"; case D3D12_DRED_ALLOCATION_TYPE_INVALID: return L"D3D12_DRED_ALLOCATION_TYPE_INVALID"; }
+}
+#endif
+
 struct D3D12 {
 	KGFXcontext ctx;
 
 	#ifdef KGFX_DEBUG
-	ID3D12Debug* debug;
+	ID3D12Debug1* debug;
 	IDXGIDebug1* dxgiDebug;
 	#endif
 	IDXGIFactory4* factory;
@@ -47,11 +134,9 @@ struct D3D12 {
 	ID3D12Resource* renderTargets[KGFX_D3D_TARGET_FRAMES];
 	ID3D12DescriptorHeap* rtvDescHeap;
 	
-	ID3D12RootSignature* rootSignature;
+	ID3D12RootSignature* emptyRootSignature;
+	ID3D12DescriptorHeap* defaultSamplerHeap;
 	ID3D12CommandAllocator* commandAllocator;
-
-	ID3D12Resource* vertexBuffer;
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 
 	u32 frameIndex;
 	IDXGISwapChain4* swapchain;
@@ -66,7 +151,7 @@ struct D3D12 {
 
 	HRESULT selectAdapter();
 	HRESULT createDevice();
-	HRESULT createCommandUtilities();
+	HRESULT createCommandListUtilities();
 	HRESULT createSwapchain();
 	HRESULT createSyncUtilities();
 
@@ -79,32 +164,181 @@ struct D3D12 {
 	void unmapBuffer(KGFXbuffer buffer);
 	KGFXresult copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
 	KGFXresult copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset);
+	void destroyBuffer(KGFXbuffer buffer);
 
-	KGFXmesh createMesh(KGFXmeshdesc meshDesc);
 	KGFXtexture createTexture(KGFXtexturedesc textureDesc);
+	void destroyTexture(KGFXtexture texture);
+
 	KGFXsampler createSampler(KGFXsamplerdesc samplerDesc);
+	void destroySampler(KGFXsampler sampler);
 
 	KGFXshader createShader(KGFXshaderdesc shaderDesc);
-	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
-
-	KGFXresult pipelineUpdateDescriptorSets(KGFXpipeline pipeline);
-
-	void pipelineUnbindDescriptorSet(KGFXpipeline pipeline, struct KGFXdescriptorset_t& set);
-
-	KGFXpipelinemesh pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding);
-	void pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh);
-	KGFXpipelinetexture pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding);
-	void pipelineUnbindDescriptorSetTexture(KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture);
-
-	KGFXuniformbuffer pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset);
-	void pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer);
-
 	void destroyShader(KGFXshader shader);
+
+	KGFXpipeline createPipeline(KGFXpipelinedesc pipelineDesc);
 	void destroyPipeline(KGFXpipeline pipeline);
-	void destroyBuffer(KGFXbuffer buffer);
-	void destroyMesh(KGFXmesh mesh);
-	void destroyTexture(KGFXtexture texture);
-	void destroySampler(KGFXsampler sampler);
+
+	KGFXcommandlist createCommandList();
+	void resetCommand(KGFXcommandlist commandList);
+	void bindPipelineCommand(KGFXcommandlist commandList, KGFXpipeline pipeline);
+	void bindVertexBufferCommand(KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding);
+	void bindIndexBufferCommand(KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding);
+	void bindDescriptorSetBufferCommand(KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding);
+	void bindDescriptorSetTextureCommand(KGFXcommandlist commandList, KGFXtexture texture, KGFXsampler sampler, u32 binding);
+	void drawCommand(KGFXcommandlist commandList, u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance);
+	void drawIndexedCommand(KGFXcommandlist commandList, u32 indexCount, u32 instanceCount, u32 firstIndex, s32 vertexOffset, u32 firstInstance);
+	void presentCommand(KGFXcommandlist commandList);
+	void submitCommands(KGFXcommandlist commandList);
+	void destroyCommandList(KGFXcommandlist commandList);
+
+	#ifdef KGFX_D3D12_BREADCRUMBS
+	void collectBreadcrumbs(KGFXcommandlist commandList, KGFXpipeline pipeline) {
+		ID3D12DeviceRemovedExtendedData1* dred;
+		HRESULT hr = device->QueryInterface(IID_PPV_ARGS(&dred));
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to query DRED interface");
+			return;
+		}
+
+		D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT1 breadcrumbs;
+		hr = dred->GetAutoBreadcrumbsOutput1(&breadcrumbs);
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to get breadcrumbs");
+			return;
+		}
+
+		const D3D12_AUTO_BREADCRUMB_NODE1* node = breadcrumbs.pHeadAutoBreadcrumbNode;
+		u32 i = 0;
+		for (; node != nullptr; node = node->pNext) {
+			DEBUG_OUTF("    Breadcrumb {}:", i);
+			if (node->pCommandListDebugNameA != nullptr) {
+				DEBUG_OUTF("    pCommandListDebugNameA: \"{}\"", node->pCommandListDebugNameA);
+			} else {
+				DEBUG_OUT("        pCommandListDebugNameA: null");
+			}
+			if (node->pCommandListDebugNameW != nullptr) {
+				DEBUG_OUTF("        pCommandListDebugNameW: \"{}\"", node->pCommandListDebugNameW);
+			} else {
+				DEBUG_OUT("        pCommandListDebugNameW: null");
+			}
+			if (node->pCommandQueueDebugNameA != nullptr) {
+				DEBUG_OUTF("        pCommandQueueDebugNameA: \"{}\"", node->pCommandQueueDebugNameA);
+			} else {
+				DEBUG_OUT("        pCommandQueueDebugNameA: null");
+			}
+			if (node->pCommandQueueDebugNameW != nullptr) {
+				DEBUG_OUTF("        pCommandQueueDebugNameW: \"{}\"", node->pCommandQueueDebugNameW);
+			} else {
+				DEBUG_OUT("        pCommandQueueDebugNameW: null");
+			}
+			if (node->pCommandList != nullptr) {
+				DEBUG_OUTF("        pCommandList: {}", node->pCommandList);
+			} else {
+				DEBUG_OUT("        pCommandList: null");
+			}
+			if (node->pCommandQueue != nullptr) {
+				DEBUG_OUTF("        pCommandQueue: {}", node->pCommandQueue);
+			} else {
+				DEBUG_OUT("        pCommandQueue: null");
+			}
+			DEBUG_OUTF("        BreadcrumbCount: {}", node->BreadcrumbCount);
+			if (node->pLastBreadcrumbValue != nullptr) {
+				DEBUG_OUTF("        pLastBreadcrumbValue: {} ({})", node->pLastBreadcrumbValue, *node->pLastBreadcrumbValue);
+			} else {
+				DEBUG_OUT("        pLastBreadcrumbValue: null");
+			}
+			if (node->pCommandHistory != nullptr) {
+				DEBUG_OUTF("        pCommandHistory: {}", node->pCommandHistory);
+				for (u32 j = 0; j < node->BreadcrumbCount; ++j) {
+					DEBUG_OUTF("            {}Operation {}: {}", (j < *node->pLastBreadcrumbValue) ? "Completed " : (j == *node->pLastBreadcrumbValue) ? "[Error] " : "", j, breadcrumbOperationToString(node->pCommandHistory[j]));
+				}
+			} else {
+				DEBUG_OUT("        pCommandHistory: null");
+			}
+			if (node->pNext != nullptr) {
+				DEBUG_OUTF("        pNext: {}", node->pNext);
+			} else {
+				DEBUG_OUT("        pNext: null");
+			}
+			DEBUG_OUTF("        BreadcrumbContextsCount: {}", node->BreadcrumbContextsCount);
+			if (node->pBreadcrumbContexts != nullptr) {
+				DEBUG_OUTF("        pBreadcrumbContexts: {}", node->pBreadcrumbContexts);
+			} else {
+				DEBUG_OUT("        pBreadcrumbContexts: null");
+			}
+			++i;
+		}
+
+		D3D12_DRED_PAGE_FAULT_OUTPUT1 pageFaults;
+		hr = dred->GetPageFaultAllocationOutput1(&pageFaults);
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to get page faults");
+			return;
+		}
+
+		DEBUG_OUTF("Page fault address: {}", pageFaults.PageFaultVA);
+		DEBUG_OUT("Page fault allocations:");
+
+		const D3D12_DRED_ALLOCATION_NODE1* allocation = pageFaults.pHeadExistingAllocationNode;
+		if (allocation != nullptr) {
+			for (; allocation != nullptr; allocation = allocation->pNext) {
+				if (allocation->ObjectNameA != nullptr) {
+					DEBUG_OUTF("    ObjectNameA: \"{}\"", allocation->ObjectNameA);
+				} else {
+					DEBUG_OUT("    ObjectNameA: null");
+				}
+				if (allocation->ObjectNameW != nullptr) {
+					DEBUG_OUTF("    ObjectNameW: \"{}\"", allocation->ObjectNameW);
+				} else {
+					DEBUG_OUT("    ObjectNameW: null");
+				}
+				DEBUG_OUTF("    AllocationType: {}", dredAllocationTypeToString(allocation->AllocationType));
+				DEBUG_OUTF("    pNext: {}", allocation->pNext);
+				OLECHAR* guid;
+				if (allocation->pObject == nullptr) {
+					DEBUG_OUT("    pObject (invalid GUID): null");
+				} else {
+					StringFromCLSID(__uuidof(*allocation->pObject), &guid);
+					DEBUG_OUTF("    pObject ({}): {}", guid, allocation->pObject);
+					CoTaskMemFree(guid);
+				}
+			}
+		} else {
+			DEBUG_OUT("    none");
+		}
+
+		DEBUG_OUT("Page fault frees:");
+		allocation = pageFaults.pHeadRecentFreedAllocationNode;
+		if (allocation != nullptr) {
+			for (; allocation != nullptr; allocation = allocation->pNext) {
+				if (allocation->ObjectNameA != nullptr) {
+					DEBUG_OUTF("    ObjectNameA: \"{}\"", allocation->ObjectNameA);
+				} else {
+					DEBUG_OUT("    ObjectNameA: null");
+				}
+				if (allocation->ObjectNameW != nullptr) {
+					DEBUG_OUTF("    ObjectNameW: \"{}\"", allocation->ObjectNameW);
+				} else {
+					DEBUG_OUT("    ObjectNameW: null");
+				}
+				DEBUG_OUTF("    AllocationType: {}", dredAllocationTypeToString(allocation->AllocationType));
+				DEBUG_OUTF("    pNext: {}", allocation->pNext);
+				OLECHAR* guid;
+				if (allocation->pObject == nullptr) {
+					DEBUG_OUT("    pObject (invalid GUID): null");
+				} else {
+					StringFromCLSID(__uuidof(*allocation->pObject), &guid);
+					DEBUG_OUTF("    pObject ({}): {}", guid, allocation->pObject);
+					CoTaskMemFree(guid);
+				}
+			}
+		} else {
+			DEBUG_OUT("    none");
+		}
+
+		DebugBreak();
+	}
+	#endif
 };
 
 struct KGFXcontext_t {
@@ -119,9 +353,38 @@ struct KGFXshader_t {
 	KGFXshadertype type;
 };
 
+typedef enum {
+	KGFX_D3D12_ROOT_PARAM_TYPE_UNIFORM_BUFFER,
+	KGFX_D3D12_ROOT_PARAM_TYPE_TEXTURE,
+	KGFX_D3D12_ROOT_PARAM_TYPE_SAMPLER,
+} KGFXd3d12rootparamtype;
+
+struct KGFXd3d12rootparam_t {
+	u32 binding;
+	KGFXd3d12rootparamtype type;
+
+	bool operator==(const KGFXd3d12rootparam_t& other) const {
+		return binding == other.binding && type == other.type;
+	}
+};
+
+class KGFXd3d12rootparam_t_hash {
+public:
+	std::size_t operator()(const KGFXd3d12rootparam_t& param) const {
+		return std::hash<u32>()(param.binding) ^ std::hash<u32>()(param.type) * 3;
+	}
+};
+
 struct KGFXpipeline_t {
 	ID3D12PipelineState* pipeline;
-	ID3D12GraphicsCommandList* commandList;
+	ID3D12GraphicsCommandList2* commandList;
+	ID3D12RootSignature* rootSignature;
+
+	D3D_PRIMITIVE_TOPOLOGY d3dTopology;
+	u32 vertexStride;
+
+	/* meta data */
+	std::unordered_map<KGFXd3d12rootparam_t, u32, KGFXd3d12rootparam_t_hash> rootParameterMap;
 };
 
 struct KGFXrenderpass_t {
@@ -129,66 +392,31 @@ struct KGFXrenderpass_t {
 };
 
 struct KGFXbuffer_t {
-	s8 temp;
-};
-
-struct KGFXmesh_t {
-	s8 temp;
-};
-
-struct KGFXpipelinemesh_t {
-	s8 temp;
-};
-
-struct KGFXuniformbuffer_t {
-	s8 temp;
+	ID3D12Resource* resource;
+	u32 size;
 };
 
 struct KGFXtexture_t {
-	s8 temp;
+	ID3D12Resource* resource;
+	ID3D12DescriptorHeap* heap;
+	DXGI_FORMAT format;
+	u32 width;
+	u32 height;
+	u32 depth;
 };
 
 struct KGFXsampler_t {
-	s8 temp;
+	ID3D12DescriptorHeap* heap;
 };
 
-struct KGFXpipelinetexture_t {
-	u32 id;
+struct KGFXcommandlist_t {
+	KGFXpipeline pipeline;
+	u32 vertexBinding;
+	KGFXbuffer vertexBuffer;
+	u32 indexBinding;
+	KGFXbuffer indexBuffer;
+	bool presentCommand;
 };
-
-static void debugFuncConcat(std::stringstream& stream, std::string& format) {
-	stream << format;
-}
-
-template<typename T, typename... Types>
-static void debugFuncConcat(std::stringstream& stream, std::string& format, T& arg, Types&... args) {
-	usize index = format.find("{}");
-	if (index == std::string::npos) {
-		stream << format;
-		return;
-	}
-
-	stream << std::string(format.begin(), format.begin() + index);
-	stream << arg;
-	if (index + 2 < format.size()) {
-		format = std::string(format.begin() + index + 2, format.end());
-		debugFuncConcat(stream, format, args...);
-	}
-}
-
-static void debugFunc(const char* format) {
-	std::cout << "KGFX debug: " << format << std::endl;
-}
-
-template<typename... Types>
-static void debugFunc(const char* format, Types... types) {
-	std::string fmt = format;
-	std::stringstream stream;
-
-	debugFuncConcat(stream, fmt, types...);
-
-	std::cout << "KGFX debug: " << stream.str() << std::endl;
-}
 
 constexpr DXGI_FORMAT datatypeToDxgiFormat(KGFXdatatype type) {
 	switch (type) {
@@ -208,7 +436,41 @@ constexpr DXGI_FORMAT datatypeToDxgiFormat(KGFXdatatype type) {
 	}
 }
 
-KGFX_API KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
+constexpr u32 shaderDatatypeSize(KGFXdatatype type) {
+	switch (type) {
+		case KGFX_DATATYPE_FLOAT: return 4;
+		case KGFX_DATATYPE_FLOAT2: return 8;
+		case KGFX_DATATYPE_FLOAT3: return 12;
+		case KGFX_DATATYPE_FLOAT4: return 16;
+		case KGFX_DATATYPE_INT: return 4;
+		case KGFX_DATATYPE_INT2: return 8;
+		case KGFX_DATATYPE_INT3: return 12;
+		case KGFX_DATATYPE_INT4: return 16;
+		case KGFX_DATATYPE_UINT: return 4;
+		case KGFX_DATATYPE_UINT2: return 8;
+		case KGFX_DATATYPE_UINT3: return 12;
+		case KGFX_DATATYPE_UINT4: return 16;
+		case KGFX_DATATYPE_MAT2: return 16;
+		case KGFX_DATATYPE_MAT3: return 36;
+		case KGFX_DATATYPE_MAT4: return 64;
+		default: return 0;
+	}
+}
+
+constexpr DXGI_FORMAT textureFormatToDxgiFormat(KGFXtextureformat format) {
+	switch (format) {
+		case KGFX_TEXTURE_FORMAT_R8G8B8A8_UNORM: return DXGI_FORMAT_R8G8B8A8_UNORM;
+		case KGFX_TEXTURE_FORMAT_R8G8B8A8_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+		case KGFX_TEXTURE_FORMAT_R32G32B32A32_SFLOAT: return DXGI_FORMAT_R32G32B32A32_FLOAT;
+		case KGFX_TEXTURE_FORMAT_R32G32B32_SFLOAT: return DXGI_FORMAT_R32G32B32_FLOAT;
+		case KGFX_TEXTURE_FORMAT_R32G32_SFLOAT: return DXGI_FORMAT_R32G32_FLOAT;
+		case KGFX_TEXTURE_FORMAT_R32_SFLOAT: return DXGI_FORMAT_R32_FLOAT;
+		case KGFX_TEXTURE_FORMAT_DEPTH: return DXGI_FORMAT_D32_FLOAT;
+		default: return DXGI_FORMAT_UNKNOWN;
+	}
+}
+
+KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
 	if (window.hwnd == INVALID_HANDLE_VALUE) {
 		return KGFX_INVALID_ARGUMENT;
 	}
@@ -239,7 +501,7 @@ KGFX_API KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontex
 }
 
 /* destroys a kgfx context */
-KGFX_API void kgfxDestroyContext(KGFXcontext ctx) {
+void kgfxDestroyContext(KGFXcontext ctx) {
 	if (ctx == nullptr) {
 		return;
 	}
@@ -248,7 +510,7 @@ KGFX_API void kgfxDestroyContext(KGFXcontext ctx) {
 	delete ctx;
 }
 
-KGFX_API KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc) {
+KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc) {
 	if (ctx == nullptr) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return nullptr;
@@ -257,7 +519,7 @@ KGFX_API KGFXshader kgfxCreateShader(KGFXcontext ctx, KGFXshaderdesc shaderDesc)
 	return ctx->d3d12.createShader(shaderDesc);
 }
 
-KGFX_API void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
+void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
 	if (ctx == nullptr) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return;
@@ -266,7 +528,7 @@ KGFX_API void kgfxDestroyShader(KGFXcontext ctx, KGFXshader shader) {
 	ctx->d3d12.destroyShader(shader);
 }
 
-KGFX_API KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc) {
+KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipelineDesc) {
 	if (ctx == nullptr) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return nullptr;
@@ -275,31 +537,7 @@ KGFX_API KGFXpipeline kgfxCreatePipeline(KGFXcontext ctx, KGFXpipelinedesc pipel
 	return ctx->d3d12.createPipeline(pipelineDesc);
 }
 
-KGFX_API KGFXpipelinemesh kgfxPipelineAddMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
-	return new KGFXpipelinemesh_t{};
-}
-
-KGFX_API void kgfxPipelineRemoveMesh(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinemesh pipelineMesh) {
-	delete pipelineMesh;
-}
-
-KGFX_API KGFXuniformbuffer kgfxPipelineBindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
-	return new KGFXuniformbuffer_t{};
-}
-
-KGFX_API void kgfxPipelineUnbindDescriptorSetBuffer(KGFXcontext ctx, KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
-	delete uniformBuffer;
-}
-
-KGFX_API KGFXpipelinetexture kgfxPipelineBindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
-	return new KGFXpipelinetexture_t{};
-}
-
-KGFX_API void kgfxPipelineUnbindDescriptorSetTexture(KGFXcontext ctx, KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture) {
-	delete pipelineTexture;
-}
-
-KGFX_API void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline) {
+void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline) {
 	if (ctx == nullptr) {
 		DEBUG_OUT("Invalid KGFXcontext");
 		return;
@@ -308,76 +546,243 @@ KGFX_API void kgfxDestroyPipeline(KGFXcontext ctx, KGFXpipeline pipeline) {
 	ctx->d3d12.destroyPipeline(pipeline);
 }
 
-KGFX_API KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
-	return new KGFXbuffer_t{};
+KGFXbuffer kgfxCreateBuffer(KGFXcontext ctx, KGFXbufferdesc bufferDesc) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.createBuffer(bufferDesc);
 }
 
-KGFX_API KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* data) {
-	return KGFX_SUCCESS;
+KGFXresult kgfxBufferUpload(KGFXcontext ctx, KGFXbuffer buffer, u32 size, void* data) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	return ctx->d3d12.uploadBuffer(buffer, size, data);
 }
 
-KGFX_API void* kgfxBufferMap(KGFXcontext ctx, KGFXbuffer buffer) {
-	return new u8[256];
+void* kgfxBufferMap(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.mapBuffer(buffer);
 }
 
-KGFX_API void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer) {
-	delete[] buffer;
+void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.unmapBuffer(buffer);
 }
 
-KGFX_API KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
-	return KGFX_SUCCESS;
+KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	return ctx->d3d12.copyBuffer(dstBuffer, srcBuffer, size, dstOffset, srcOffset);
 }
 
-KGFX_API void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
-	delete buffer;
+void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.destroyBuffer(buffer);
 }
 
-KGFX_API KGFXmesh kgfxCreateMesh(KGFXcontext ctx, KGFXmeshdesc meshDesc) {
-	return new KGFXmesh_t{};
+KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.createTexture(textureDesc);
 }
 
-KGFX_API void kgfxDestroyMesh(KGFXcontext ctx, KGFXmesh mesh) {
-	delete mesh;
+KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	return ctx->d3d12.copyBufferToTexture(dstTexture, srcBuffer, srcOffset);
 }
 
-KGFX_API KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc) {
-	return new KGFXtexture_t{};
+void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.destroyTexture(texture);
 }
 
-KGFX_API KGFXresult kgfxCopyBufferToTexture(KGFXcontext ctx, KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
-	return KGFX_SUCCESS;
+KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.createSampler(samplerDesc);
 }
 
-KGFX_API void kgfxDestroyTexture(KGFXcontext ctx, KGFXtexture texture) {
-	delete texture;
+void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.destroySampler(sampler);
 }
 
-KGFX_API KGFXsampler kgfxCreateSampler(KGFXcontext ctx, KGFXsamplerdesc samplerDesc) {
-	return new KGFXsampler_t{};
+KGFXcommandlist kgfxCreateCommandList(KGFXcontext ctx) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return nullptr;
+	}
+
+	return ctx->d3d12.createCommandList();
 }
 
-KGFX_API void kgfxDestroySampler(KGFXcontext ctx, KGFXsampler sampler) {
-	delete sampler;
+void kgfxCommandReset(KGFXcontext ctx, KGFXcommandlist commandList) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.resetCommand(commandList);
+}
+
+void kgfxCommandBindPipeline(KGFXcontext ctx, KGFXcommandlist commandList, KGFXpipeline pipeline) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.bindPipelineCommand(commandList, pipeline);
+}
+
+void kgfxCommandBindVertexBuffer(KGFXcontext ctx, KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.bindVertexBufferCommand(commandList, buffer, binding);
+}
+
+void kgfxCommandBindIndexBuffer(KGFXcontext ctx, KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.bindIndexBufferCommand(commandList, buffer, binding);
+}
+
+void kgfxCommandBindDescriptorSetBuffer(KGFXcontext ctx, KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.bindDescriptorSetBufferCommand(commandList, buffer, binding);
+}
+
+void kgfxCommandBindDescriptorSetTexture(KGFXcontext ctx, KGFXcommandlist commandList, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.bindDescriptorSetTextureCommand(commandList, texture, sampler, binding);
+}
+
+void kgfxCommandDraw(KGFXcontext ctx, KGFXcommandlist commandList, u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.drawCommand(commandList, vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
+void kgfxCommandDrawIndexed(KGFXcontext ctx, KGFXcommandlist commandList, u32 indexCount, u32 instanceCount, u32 firstIndex, s32 vertexOffset, u32 firstInstance) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.drawIndexedCommand(commandList, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+}
+
+void kgfxCommandPresent(KGFXcontext ctx, KGFXcommandlist commandList) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.presentCommand(commandList);
+}
+
+void kgfxCommandListSubmit(KGFXcontext ctx, KGFXcommandlist commandList) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.submitCommands(commandList);
+}
+
+void kgfxDestroyCommandList(KGFXcontext ctx, KGFXcommandlist commandList) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return;
+	}
+
+	ctx->d3d12.destroyCommandList(commandList);
 }
 
 /* returns implementation version */
-KGFX_API u32 kgfxGetImplementationVersion() {
+u32 kgfxGetImplementationVersion(void) {
 	return KGFX_IMPL_VER;
 }
 
-KGFX_API void kgfxRender(KGFXcontext ctx, KGFXpipeline pipeline) {
-	ctx->d3d12.render(pipeline);
+KGFXbackend kgfxGetBackend(void) {
+	return KGFX_BACKEND;
 }
 
 HRESULT D3D12::init() {
 	HRESULT hr = S_OK;
 	#ifdef KGFX_DEBUG
-	hr = D3D12GetDebugInterface(IID_PPV_ARGS(&debug));
-	if (FAILED(hr)) {
-		DEBUG_OUT("Failed to get debug interface");
-		return hr;
-	} else {
-		debug->EnableDebugLayer();
+	{
+		ID3D12Debug* _debug;
+		hr = D3D12GetDebugInterface(IID_PPV_ARGS(&_debug));
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to get debug interface");
+			return hr;
+		} else {
+			hr = _debug->QueryInterface(IID_PPV_ARGS(&debug));
+			if (FAILED(hr)) {
+				DEBUG_OUT("Failed to query debug interface");
+				return hr;
+			}
+			debug->EnableDebugLayer();
+			#ifdef KGFX_D3D12_VALIDATION
+			debug->SetEnableGPUBasedValidation(true);
+			#endif
+			_debug->Release();
+		}
 	}
 
 	hr = DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiDebug));
@@ -393,6 +798,21 @@ HRESULT D3D12::init() {
 			infoQueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 			infoQueue->Release();
 		}
+	}
+	#endif
+
+	#ifdef KGFX_D3D12_BREADCRUMBS
+	{
+		ID3D12DeviceRemovedExtendedDataSettings1* dred;
+		hr = D3D12GetDebugInterface(IID_PPV_ARGS(&dred));
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to get DRED interface");
+			return hr;
+		}
+
+		dred->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+		dred->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+		dred->Release();
 	}
 	#endif
 
@@ -434,7 +854,7 @@ HRESULT D3D12::init() {
 		return hr;
 	}
 
-	hr = createCommandUtilities();
+	hr = createCommandListUtilities();
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to create command utilities");
 		return hr;
@@ -490,7 +910,7 @@ HRESULT D3D12::init() {
 			return hr;
 		}
 
-		hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+		hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&emptyRootSignature));
 		if (FAILED(hr)) {
 			DEBUG_OUT("Failed to create root signature");
 			return hr;
@@ -500,50 +920,32 @@ HRESULT D3D12::init() {
 	}
 
 	{
-		const float vertices[] = {
-			0.5f, 0.5f, 0.0f,
-			0.5f, -0.5f, 0.0f,
-			-0.5f, -0.5f, 0.0f,
-			-0.5f, 0.5f, 0.0f,
-			0.5f, 0.5f, 0.0f,
-			-0.5f, -0.5f, 0.0f,
-		};
+		D3D12_SAMPLER_DESC desc = {};
+		desc.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+		desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+		desc.MipLODBias = 0.0f;
+		desc.MaxAnisotropy = 1.0f;
+		desc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+		desc.MinLOD = 0.0f;
+		desc.MaxLOD = D3D12_FLOAT32_MAX;
 
-		D3D12_HEAP_PROPERTIES heapProperties = {};
-		heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		heapDesc.NodeMask = 0;
 
-		D3D12_RESOURCE_DESC resourceDesc = {};
-		resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		resourceDesc.Alignment = 0;
-		resourceDesc.Width = sizeof(vertices);
-		resourceDesc.Height = 1;
-		resourceDesc.DepthOrArraySize = 1;
-		resourceDesc.MipLevels = 1;
-		resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-		resourceDesc.SampleDesc.Count = 1;
-		resourceDesc.SampleDesc.Quality = 0;
-		resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&vertexBuffer));
+		ID3D12DescriptorHeap* heap;
+		HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&heap));
 		if (FAILED(hr)) {
-			DEBUG_OUT("Failed to create vertex buffer");
-			return hr;
+			DEBUG_OUT("Failed to create sampler descriptor heap");
+			return KGFX_HANDLE_NULL;
 		}
 
-		void* mapped;
-		D3D12_RANGE range = { 0 };
-		hr = vertexBuffer->Map(0, &range, &mapped);
-		if (FAILED(hr)) {
-			DEBUG_OUT("Failed to map vertex buffer");
-			return hr;
-		}
-		memcpy(mapped, vertices, sizeof(vertices));
-		vertexBuffer->Unmap(0, nullptr);
-
-		vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
-		vertexBufferView.StrideInBytes = sizeof(float) * 3;
-		vertexBufferView.SizeInBytes = sizeof(vertices);
+		device->CreateSampler(&desc, heap->GetCPUDescriptorHandleForHeapStart());
+		defaultSamplerHeap = heap;
 	}
 
 	hr = createSyncUtilities();
@@ -553,6 +955,7 @@ HRESULT D3D12::init() {
 	}
 
 	DEBUG_OUT("KGFX and D3D12 initialized properly");
+	++contextCount;
 	return S_OK;
 }
 
@@ -572,14 +975,13 @@ void D3D12::destroy() {
 
 	RELEASE(swapchain);
 	RELEASE(rtvDescHeap);
-	RELEASE(rootSignature);
+	RELEASE(defaultSamplerHeap);
+	RELEASE(emptyRootSignature);
 	RELEASE(commandAllocator);
 
 	for (u32 i = 0; i < KGFX_D3D_TARGET_FRAMES; ++i) {
 		RELEASE(renderTargets[i]);
 	}
-
-	RELEASE(vertexBuffer);
 
 	RELEASE(commandQueue);
 	RELEASE(device);
@@ -590,104 +992,13 @@ void D3D12::destroy() {
 	dxgiDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
 	RELEASE(dxgiDebug);
 	#endif
-}
 
-void D3D12::render(KGFXpipeline pipeline) {
-	u32 value = inFlightFenceValue;
-	
-	HRESULT hr = commandAllocator->Reset();
-	if (FAILED(hr)) {
-		DEBUG_OUT("Failed to reset command allocator");
-		return;
+	--contextCount;
+	#ifdef KGFX_LOG_TO_FILE
+	if (contextCount == 0) {
+		debugCloseLogFile();
 	}
-
-	hr = pipeline->commandList->Reset(commandAllocator, pipeline->pipeline);
-	if (FAILED(hr)) {
-		DEBUG_OUT("Failed to reset command list");
-		return;
-	}
-
-	pipeline->commandList->SetGraphicsRootSignature(rootSignature);
-	pipeline->commandList->RSSetViewports(1, &viewport);
-	pipeline->commandList->RSSetScissorRects(1, &scissor);
-
-	D3D12_RESOURCE_BARRIER barrier = {};
-	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-	barrier.Transition.pResource = renderTargets[frameIndex];
-	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-	pipeline->commandList->ResourceBarrier(1, &barrier);
-
-	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvDescHeap->GetCPUDescriptorHandleForHeapStart();
-	handle.ptr += frameIndex * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-	pipeline->commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
-
-	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-	pipeline->commandList->ClearRenderTargetView(handle, clearColor, 0, nullptr);
-
-	pipeline->commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	pipeline->commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-	pipeline->commandList->DrawInstanced(6, 1, 0, 0);
-
-	D3D12_RESOURCE_BARRIER presentBarrier = barrier;
-	presentBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	presentBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-
-	pipeline->commandList->ResourceBarrier(1, &presentBarrier);
-
-	hr = pipeline->commandList->Close();
-	if (FAILED(hr)) {
-		DEBUG_OUT("Failed to close command list");
-		return;
-	}
-
-	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&pipeline->commandList));
-
-	{
-		u32 flags = 0;
-		#ifdef KGFX_DEBUG
-		//flags |= DXGI_PRESENT_TEST;
-		#endif
-
-		DXGI_PRESENT_PARAMETERS params = {};
-		hr = swapchain->Present1(1, flags, &params);
-		if (FAILED(hr)) {
-			if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
-				DEBUG_OUT("Device removed or reset");
-				return;
-			} else {
-				DEBUG_OUT("Failed to present");
-				return;
-			}
-		}
-
-		u32 value = inFlightFenceValue;
-
-		hr = commandQueue->Signal(inFlightFence, value);
-		if (FAILED(hr)) {
-			DEBUG_OUT("Failed to signal in flight fence");
-			return;
-		}
-
-		++inFlightFenceValue;
-
-		u64 completed = inFlightFence->GetCompletedValue();
-		if (inFlightFence->GetCompletedValue() < value) {
-			hr = inFlightFence->SetEventOnCompletion(value, inFlightFenceEvent);
-			if (FAILED(hr)) {
-				DEBUG_OUT("Failed to set event on completion");
-				return;
-			}
-
-			WaitForSingleObject(inFlightFenceEvent, INFINITE);
-		}
-
-		frameIndex = swapchain->GetCurrentBackBufferIndex();
-	}
+	#endif
 }
 
 RECT D3D12::getWindowExtent() {
@@ -709,7 +1020,7 @@ HRESULT D3D12::selectAdapter() {
 			score += 5000;
 		}
 
-		score += desc.DedicatedVideoMemory / 1024;
+		score += static_cast<u32>(desc.DedicatedVideoMemory / 1024);
 
 		if (SUCCEEDED(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr))) {
 			if (score > best) {
@@ -745,7 +1056,7 @@ HRESULT D3D12::createDevice() {
 	return S_OK;
 }
 
-HRESULT D3D12::createCommandUtilities() {
+HRESULT D3D12::createCommandListUtilities() {
 	HRESULT hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to create command allocator");
@@ -769,8 +1080,8 @@ HRESULT D3D12::createCommandUtilities() {
 
 HRESULT D3D12::createSwapchain() {
 	DXGI_SWAP_CHAIN_DESC1 swapchainDesc = {};
-	swapchainDesc.Width = viewport.Width;
-	swapchainDesc.Height = viewport.Height;
+	swapchainDesc.Width = static_cast<u32>(viewport.Width);
+	swapchainDesc.Height = static_cast<u32>(viewport.Height);
 	swapchainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	swapchainDesc.Stereo = FALSE;
 	swapchainDesc.SampleDesc.Count = 1;
@@ -810,39 +1121,428 @@ HRESULT D3D12::createSyncUtilities() {
 }
 
 KGFXbuffer D3D12::createBuffer(KGFXbufferdesc bufferDesc) {
-	return KGFX_HANDLE_NULL;
+	if (bufferDesc.size == 0) {
+		KGFXbuffer buffer = new KGFXbuffer_t{};
+		buffer->size = 0;
+		buffer->resource = nullptr;
+		return buffer;
+	}
+
+	D3D12_HEAP_PROPERTIES heapProperties = {};
+	heapProperties.Type = (bufferDesc.location == KGFX_BUFFER_LOCATION_CPU) ? D3D12_HEAP_TYPE_UPLOAD : D3D12_HEAP_TYPE_DEFAULT;
+	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	heapProperties.CreationNodeMask = 0;
+	heapProperties.VisibleNodeMask = 0;
+
+	D3D12_RESOURCE_DESC resourceDesc = {};
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resourceDesc.Alignment = 0;
+	resourceDesc.Width = bufferDesc.size;
+	resourceDesc.Height = 1;
+	resourceDesc.DepthOrArraySize = 1;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.SampleDesc.Quality = 0;
+	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* resource;
+	HRESULT hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, (bufferDesc.location == KGFX_BUFFER_LOCATION_CPU) ? D3D12_RESOURCE_STATE_GENERIC_READ : D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&resource));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create KGFXbuffer");
+		return KGFX_HANDLE_NULL;
+	}
+
+	KGFXbuffer buffer = new KGFXbuffer_t{};
+	buffer->size = bufferDesc.size;
+	buffer->resource = resource;
+
+	if (bufferDesc.pData == nullptr) {
+		return buffer;
+	}
+
+	if (bufferDesc.location == KGFX_BUFFER_LOCATION_CPU) {
+		void* mapped;
+		D3D12_RANGE range = { 0 };
+		hr = buffer->resource->Map(0, &range, &mapped);
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to map KGFXbuffer");
+			return KGFX_HANDLE_NULL;
+		}
+
+		memcpy(mapped, bufferDesc.pData, bufferDesc.size);
+		buffer->resource->Unmap(0, nullptr);
+		return buffer;
+	}
+
+	D3D12_HEAP_PROPERTIES uploadHeapProperties = {};
+	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+	uploadHeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	uploadHeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	uploadHeapProperties.CreationNodeMask = 0;
+	uploadHeapProperties.VisibleNodeMask = 0;
+
+	ID3D12Resource* upload;
+	hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create upload KGFXbuffer");
+		return KGFX_HANDLE_NULL;
+	}
+
+	void* mapped;
+	D3D12_RANGE range = { 0 };
+	hr = upload->Map(0, &range, &mapped);
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to map upload buffer");
+		return KGFX_HANDLE_NULL;
+	}
+
+	memcpy(mapped, bufferDesc.pData, bufferDesc.size);
+	upload->Unmap(0, nullptr);
+
+	commandAllocator->Reset();
+
+	ID3D12GraphicsCommandList* commandList;
+	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, IID_PPV_ARGS(&commandList));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create command list");
+		return KGFX_HANDLE_NULL;
+	}
+
+	commandList->CopyBufferRegion(buffer->resource, 0, upload, 0, bufferDesc.size);
+
+	D3D12_RESOURCE_BARRIER resourceBarrier = {};
+	resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	resourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	resourceBarrier.Transition.pResource = buffer->resource;
+	resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+	resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &resourceBarrier);
+	commandList->Close();
+
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList));
+	commandQueue->Signal(inFlightFence, inFlightFenceValue);
+	inFlightFence->SetEventOnCompletion(inFlightFenceValue, inFlightFenceEvent);
+	WaitForSingleObject(inFlightFenceEvent, INFINITE);
+	++inFlightFenceValue;
+	RELEASE(commandList);
+	RELEASE(upload);
+
+	return buffer;
 }
 
 KGFXresult D3D12::uploadBuffer(KGFXbuffer buffer, u32 size, void* data) {
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer provided");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	if (size == 0) {
+		DEBUG_OUT("Invalid size provided");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	if (data == nullptr) {
+		DEBUG_OUT("Invalid data pointer provided");
+		return KGFX_INVALID_ARGUMENT;
+	}
+
+	D3D12_RESOURCE_DESC resourceDesc = {};
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resourceDesc.Alignment = 0;
+	resourceDesc.Width = size;
+	resourceDesc.Height = 1;
+	resourceDesc.DepthOrArraySize = 1;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.SampleDesc.Quality = 0;
+	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	D3D12_HEAP_PROPERTIES uploadHeapProperties = {};
+	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+	uploadHeapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	uploadHeapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	uploadHeapProperties.CreationNodeMask = 0;
+	uploadHeapProperties.VisibleNodeMask = 0;
+
+	ID3D12Resource* upload;
+	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create upload KGFXbuffer");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	void* mapped;
+	D3D12_RANGE range = { 0 };
+	hr = upload->Map(0, &range, &mapped);
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to map upload buffer");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	memcpy(mapped, data, size);
+	upload->Unmap(0, nullptr);
+
+	commandAllocator->Reset();
+
+	ID3D12GraphicsCommandList* commandList;
+	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, IID_PPV_ARGS(&commandList));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create command list");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	commandList->CopyBufferRegion(buffer->resource, 0, upload, 0, size);
+
+	D3D12_RESOURCE_BARRIER resourceBarrier = {};
+	resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	resourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	resourceBarrier.Transition.pResource = buffer->resource;
+	resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+	resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &resourceBarrier);
+	commandList->Close();
+
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList));
+	commandQueue->Signal(inFlightFence, inFlightFenceValue);
+	inFlightFence->SetEventOnCompletion(inFlightFenceValue, inFlightFenceEvent);
+	WaitForSingleObject(inFlightFenceEvent, INFINITE);
+	++inFlightFenceValue;
+	RELEASE(commandList);
+	RELEASE(upload);
+
 	return KGFX_SUCCESS;
 }
 
 void* D3D12::mapBuffer(KGFXbuffer buffer) {
-	return KGFX_HANDLE_NULL;
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer provided");
+		return nullptr;
+	}
+
+	void* mapped;
+	D3D12_RANGE range = { 0 };
+	HRESULT hr = buffer->resource->Map(0, &range, &mapped);
+	if (FAILED(hr)) {
+		DEBUG_OUT("KGFXbuffer does not support mapping");
+		return nullptr;
+	}
+
+	return mapped;
 }
 
 void D3D12::unmapBuffer(KGFXbuffer buffer) {
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer provided");
+		return;
+	}
 
+	buffer->resource->Unmap(0, nullptr);
 }
 
 KGFXresult D3D12::copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
+	commandAllocator->Reset();
+
+	ID3D12GraphicsCommandList* commandList;
+	HRESULT hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, IID_PPV_ARGS(&commandList));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create command list");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	D3D12_RESOURCE_BARRIER resourceBarrier = {};
+	resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	resourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	resourceBarrier.Transition.pResource = dstBuffer->resource;
+	resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+	resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+	resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &resourceBarrier);
+	commandList->CopyBufferRegion(dstBuffer->resource, dstOffset, srcBuffer->resource, srcOffset, size);
+
+	resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	resourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	resourceBarrier.Transition.pResource = dstBuffer->resource;
+	resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+	resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &resourceBarrier);
+	commandList->Close();
+
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList));
+	commandQueue->Signal(inFlightFence, inFlightFenceValue);
+	inFlightFence->SetEventOnCompletion(inFlightFenceValue, inFlightFenceEvent);
+	WaitForSingleObject(inFlightFenceEvent, INFINITE);
+	++inFlightFenceValue;
+	RELEASE(commandList);
+
 	return KGFX_SUCCESS;
 }
 
 KGFXresult D3D12::copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset) {
+	commandAllocator->Reset();
+
+	ID3D12GraphicsCommandList* commandList;
+	HRESULT hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, IID_PPV_ARGS(&commandList));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create command list");
+		return KGFX_GENERIC_ERROR;
+	}
+
+	D3D12_RESOURCE_BARRIER resourceBarrier = {};
+	resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	resourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	resourceBarrier.Transition.pResource = dstTexture->resource;
+	resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+	resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &resourceBarrier);
+	commandList->CopyBufferRegion(dstTexture->resource, 0, srcBuffer->resource, srcOffset, dstTexture->width * dstTexture->height * dstTexture->depth * sizeof(u32));
+
+	resourceBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	resourceBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	resourceBarrier.Transition.pResource = dstTexture->resource;
+	resourceBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	resourceBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	resourceBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->ResourceBarrier(1, &resourceBarrier);
+	commandList->Close();
+
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList));
+	commandQueue->Signal(inFlightFence, inFlightFenceValue);
+	inFlightFence->SetEventOnCompletion(inFlightFenceValue, inFlightFenceEvent);
+	WaitForSingleObject(inFlightFenceEvent, INFINITE);
+	++inFlightFenceValue;
+	RELEASE(commandList);
 	return KGFX_SUCCESS;
 }
 
-KGFXmesh D3D12::createMesh(KGFXmeshdesc meshDesc) {
-	return KGFX_HANDLE_NULL;
-}
-
 KGFXtexture D3D12::createTexture(KGFXtexturedesc textureDesc) {
-	return KGFX_HANDLE_NULL;
+	if (textureDesc.width == 0) {
+		DEBUG_OUT("Invalid KGFXtexturedesc");
+		return KGFX_HANDLE_NULL;
+	}
+
+	D3D12_RESOURCE_DESC resourceDesc = {};
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resourceDesc.Alignment = 0;
+	resourceDesc.Width = textureDesc.width;
+	resourceDesc.Height = (textureDesc.height == 0) ? 1 : textureDesc.height;
+	resourceDesc.DepthOrArraySize = (textureDesc.depth == 0) ? 1 : textureDesc.depth;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.Format = textureFormatToDxgiFormat(textureDesc.format);
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.SampleDesc.Quality = 0;
+	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	D3D12_HEAP_PROPERTIES heapProperties = {};
+	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	heapProperties.CreationNodeMask = 0;
+	heapProperties.VisibleNodeMask = 0;
+
+	ID3D12Resource* resource;
+	HRESULT hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&resource));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create KGFXtexture");
+		return KGFX_HANDLE_NULL;
+	}
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Format = resourceDesc.Format;
+	srvDesc.ViewDimension = (textureDesc.height == 0) ? D3D12_SRV_DIMENSION_TEXTURE1D : (textureDesc.depth == 0) ? D3D12_SRV_DIMENSION_TEXTURE2D : D3D12_SRV_DIMENSION_TEXTURE3D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	if (srvDesc.ViewDimension == D3D12_SRV_DIMENSION_TEXTURE1D) {
+		srvDesc.Texture1D.MostDetailedMip = 0;
+		srvDesc.Texture1D.MipLevels = 1;
+		srvDesc.Texture1D.ResourceMinLODClamp = 0.0f;
+	} else if (srvDesc.ViewDimension == D3D12_SRV_DIMENSION_TEXTURE2D) {
+		srvDesc.Texture2D.MostDetailedMip = 0;
+		srvDesc.Texture2D.MipLevels = 1;
+		srvDesc.Texture2D.PlaneSlice = 0;
+		srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+	} else {
+		srvDesc.Texture3D.MostDetailedMip = 0;
+		srvDesc.Texture3D.MipLevels = 1;
+		srvDesc.Texture3D.ResourceMinLODClamp = 0.0f;
+	}
+
+	/* create srv heap */
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+	heapDesc.NumDescriptors = 1;
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	heapDesc.NodeMask = 0;
+
+	ID3D12DescriptorHeap* srvDescHeap;
+	hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&srvDescHeap));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create srv descriptor heap");
+		RELEASE(resource);
+		return KGFX_HANDLE_NULL;
+	}
+
+	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = srvDescHeap->GetCPUDescriptorHandleForHeapStart();
+	device->CreateShaderResourceView(resource, &srvDesc, srvHandle);
+
+	KGFXtexture texture = new KGFXtexture_t{};
+	texture->width = textureDesc.width;
+	texture->height = textureDesc.height;
+	texture->depth = textureDesc.depth;
+	texture->format = resourceDesc.Format;
+	texture->resource = resource;
+	texture->heap = srvDescHeap;
+	return texture;
 }
 
 KGFXsampler D3D12::createSampler(KGFXsamplerdesc samplerDesc) {
-	return KGFX_HANDLE_NULL;
+	D3D12_SAMPLER_DESC desc = {};
+	if (samplerDesc.minFilter == KGFX_SAMPLER_FILTER_NEAREST) {
+		desc.Filter = (samplerDesc.magFilter == KGFX_SAMPLER_FILTER_NEAREST) ? D3D12_FILTER_MIN_MAG_MIP_POINT : D3D12_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT;
+	} else {
+		desc.Filter = (samplerDesc.magFilter == KGFX_SAMPLER_FILTER_NEAREST) ? D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT : D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	}
+	
+	desc.AddressU = (samplerDesc.addressModeU == KGFX_SAMPLER_ADDRESS_MODE_CLAMP) ? D3D12_TEXTURE_ADDRESS_MODE_CLAMP : (samplerDesc.addressModeU == KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT) ? D3D12_TEXTURE_ADDRESS_MODE_MIRROR : D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	desc.AddressV = (samplerDesc.addressModeV == KGFX_SAMPLER_ADDRESS_MODE_CLAMP) ? D3D12_TEXTURE_ADDRESS_MODE_CLAMP : (samplerDesc.addressModeV == KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT) ? D3D12_TEXTURE_ADDRESS_MODE_MIRROR : D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	desc.AddressW = (samplerDesc.addressModeW == KGFX_SAMPLER_ADDRESS_MODE_CLAMP) ? D3D12_TEXTURE_ADDRESS_MODE_CLAMP : (samplerDesc.addressModeW == KGFX_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT) ? D3D12_TEXTURE_ADDRESS_MODE_MIRROR : D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	desc.MipLODBias = 0.0f;
+	desc.MaxAnisotropy = 1.0f;
+	desc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	desc.MinLOD = 0.0f;
+	desc.MaxLOD = D3D12_FLOAT32_MAX;
+
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+	heapDesc.NumDescriptors = 1;
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	heapDesc.NodeMask = 0;
+
+	ID3D12DescriptorHeap* heap;
+	HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&heap));
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to create sampler descriptor heap");
+		return KGFX_HANDLE_NULL;
+	}
+
+	device->CreateSampler(&desc, heap->GetCPUDescriptorHandleForHeapStart());
+	KGFXsampler sampler = new KGFXsampler_t{};
+	sampler->heap = heap;
+	return sampler;
 }
 
 KGFXshader D3D12::createShader(KGFXshaderdesc shaderDesc) {
@@ -930,8 +1630,12 @@ KGFXpipeline D3D12::createPipeline(KGFXpipelinedesc pipelineDesc) {
 	}
 
 	u32 totalAttributeCount = 0;
+	u32 vertexStride = 0;
 	for (u32 i = 0; i < pipelineDesc.layout.bindingCount; ++i) {
 		totalAttributeCount += pipelineDesc.layout.pBindings[i].attributeCount;
+		for (u32 j = 0; j < pipelineDesc.layout.pBindings[i].attributeCount; ++j) {
+			vertexStride += shaderDatatypeSize(pipelineDesc.layout.pBindings[i].pAttributes[j].type);
+		}
 	}
 
 	std::vector<D3D12_INPUT_ELEMENT_DESC> inputElementDescs(pipelineDesc.layout.pBindings[0].attributeCount);
@@ -1005,6 +1709,110 @@ KGFXpipeline D3D12::createPipeline(KGFXpipelinedesc pipelineDesc) {
 		bytecodes[index].BytecodeLength = pipelineDesc.pShaders[i]->blob->GetBufferSize();
 	}
 
+	u32 uniformBufferCount = 0;
+	u32 textureCount = 0;
+	for (u32 i = 0; i < pipelineDesc.layout.descriptorSetCount; ++i) {
+		if (pipelineDesc.layout.pDescriptorSets[i].usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
+			++uniformBufferCount;
+		} else if (pipelineDesc.layout.pDescriptorSets[i].usage == KGFX_DESCRIPTOR_USAGE_TEXTURE) {
+			++textureCount;
+		}
+	}
+
+	KGFXpipeline kgfxPipeline = new KGFXpipeline_t{};
+	ID3D12RootSignature* rootSignature;
+	HRESULT hr = S_OK;
+	if (uniformBufferCount == 0) {
+		rootSignature = emptyRootSignature;
+	} else {
+		std::vector<D3D12_ROOT_PARAMETER> parameters(uniformBufferCount + textureCount * 2);
+		std::vector<D3D12_DESCRIPTOR_RANGE> ranges(textureCount * 2);
+		u32 current = 0;
+		u32 textureCurrent = 0;
+		KGFXd3d12rootparam_t rootParam = {};
+		for (u32 i = 0; i < pipelineDesc.layout.descriptorSetCount; ++i) {
+			if (pipelineDesc.layout.pDescriptorSets[i].usage == KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER) {
+				parameters[current].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+				parameters[current].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+				parameters[current].Constants.RegisterSpace = 0;
+				parameters[current].Constants.ShaderRegister = pipelineDesc.layout.pDescriptorSets[i].binding;
+				parameters[current].Constants.Num32BitValues = pipelineDesc.layout.pDescriptorSets[i].size / 4 + (pipelineDesc.layout.pDescriptorSets[i].size % 4 != 0);
+
+				rootParam.binding = pipelineDesc.layout.pDescriptorSets[i].binding;
+				rootParam.type = KGFX_D3D12_ROOT_PARAM_TYPE_UNIFORM_BUFFER;
+
+				kgfxPipeline->rootParameterMap[rootParam] = current;
+				++current;
+			} else if (pipelineDesc.layout.pDescriptorSets[i].usage == KGFX_DESCRIPTOR_USAGE_TEXTURE) {
+				ranges[textureCurrent].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+				ranges[textureCurrent].NumDescriptors = 1;
+				ranges[textureCurrent].BaseShaderRegister = pipelineDesc.layout.pDescriptorSets[i].binding;
+				ranges[textureCurrent].RegisterSpace = 0;
+
+				ranges[textureCurrent + 1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+				ranges[textureCurrent + 1].NumDescriptors = 1;
+				ranges[textureCurrent + 1].BaseShaderRegister = pipelineDesc.layout.pDescriptorSets[i].binding;
+				ranges[textureCurrent + 1].RegisterSpace = 0;
+
+				parameters[current].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+				parameters[current].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+				parameters[current].DescriptorTable.NumDescriptorRanges = 1;
+				parameters[current].DescriptorTable.pDescriptorRanges = &ranges[textureCurrent];
+
+				parameters[current + 1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+				parameters[current + 1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+				parameters[current + 1].DescriptorTable.NumDescriptorRanges = 1;
+				parameters[current + 1].DescriptorTable.pDescriptorRanges = &ranges[textureCurrent + 1];
+
+				rootParam.binding = pipelineDesc.layout.pDescriptorSets[i].binding;
+				rootParam.type = KGFX_D3D12_ROOT_PARAM_TYPE_TEXTURE;
+				kgfxPipeline->rootParameterMap[rootParam] = current;
+
+				rootParam.type = KGFX_D3D12_ROOT_PARAM_TYPE_SAMPLER;
+				kgfxPipeline->rootParameterMap[rootParam] = current + 1;
+
+				textureCurrent += 2;
+				current += 2;
+			}
+		}
+
+		for (auto const& key : kgfxPipeline->rootParameterMap) {
+			DEBUG_OUTF("{}: Binding: {}, Type: {}", key.second, key.first.binding, key.first.type);
+		}
+
+		D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
+		rootSignatureDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_0;
+		rootSignatureDesc.Desc_1_0.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+		rootSignatureDesc.Desc_1_0.NumParameters = parameters.size();
+		rootSignatureDesc.Desc_1_0.pParameters = const_cast<const D3D12_ROOT_PARAMETER*>(parameters.data());
+		rootSignatureDesc.Desc_1_0.NumStaticSamplers = 0;
+		rootSignatureDesc.Desc_1_0.pStaticSamplers = nullptr;
+
+		ID3DBlob* signature;
+		ID3DBlob* error;
+		hr = D3D12SerializeVersionedRootSignature(&rootSignatureDesc, &signature, &error);
+		if (FAILED(hr)) {
+			char* buf = new char[error->GetBufferSize()];
+			memcpy(buf, error->GetBufferPointer(), error->GetBufferSize());
+			DEBUG_OUTF("Failed to serialize root signature: {}", buf);
+			delete kgfxPipeline;
+			delete[] buf;
+			RELEASE(error);
+			return KGFX_HANDLE_NULL;
+		}
+		RELEASE(error);
+
+		hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to create root signature");
+			delete kgfxPipeline;
+			RELEASE(signature);
+			return KGFX_HANDLE_NULL;
+		}
+
+		RELEASE(signature);
+	}
+
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 	psoDesc.pRootSignature = rootSignature;
 	psoDesc.VS = bytecodes[0];
@@ -1024,58 +1832,37 @@ KGFXpipeline D3D12::createPipeline(KGFXpipelinedesc pipelineDesc) {
 	psoDesc.SampleDesc.Quality = 0;
 
 	ID3D12PipelineState* pipeline;
-	HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline));
+	hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline));
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to create D3D12 pipeline state");
+		delete kgfxPipeline;
+		if (rootSignature != emptyRootSignature) {
+			RELEASE(rootSignature);
+		}
 		return KGFX_HANDLE_NULL;
 	}
 
-	ID3D12GraphicsCommandList* commandList;
+	ID3D12GraphicsCommandList2* commandList;
 	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipeline, IID_PPV_ARGS(&commandList));
 	if (FAILED(hr)) {
 		DEBUG_OUT("Failed to create D3D12 command list");
 		RELEASE(pipeline);
+		delete kgfxPipeline;
+		if (rootSignature != emptyRootSignature) {
+			RELEASE(rootSignature);
+		}
 		return KGFX_HANDLE_NULL;
 	}
 
 	commandList->Close();
 
-	KGFXpipeline kgfxPipeline = new KGFXpipeline_t{};
 	kgfxPipeline->pipeline = pipeline;
 	kgfxPipeline->commandList = commandList;
+	kgfxPipeline->rootSignature = rootSignature;
+
+	kgfxPipeline->d3dTopology = (pipelineDesc.topology == KGFX_TOPOLOGY_POINTS) ? D3D_PRIMITIVE_TOPOLOGY_POINTLIST : (pipelineDesc.topology == KGFX_TOPOLOGY_LINES) ? D3D_PRIMITIVE_TOPOLOGY_LINELIST : D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	kgfxPipeline->vertexStride = vertexStride;
 	return kgfxPipeline;
-}
-
-KGFXresult D3D12::pipelineUpdateDescriptorSets(KGFXpipeline pipeline) {
-	return KGFX_SUCCESS;
-}
-
-void D3D12::pipelineUnbindDescriptorSet(KGFXpipeline pipeline, struct KGFXdescriptorset_t& set) {
-
-}
-
-KGFXpipelinemesh D3D12::pipelineAddMesh(KGFXpipeline pipeline, KGFXmesh mesh, u32 binding) {
-	return KGFX_HANDLE_NULL;
-}
-
-void D3D12::pipelineRemoveMesh(KGFXpipeline pipeline, KGFXpipelinemesh mesh) {
-
-}
-
-KGFXpipelinetexture D3D12::pipelineBindDescriptorSetTexture(KGFXpipeline pipeline, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
-	return KGFX_HANDLE_NULL;
-}
-
-void D3D12::pipelineUnbindDescriptorSetTexture(KGFXpipeline pipeline, KGFXpipelinetexture pipelineTexture) {
-
-}
-
-KGFXuniformbuffer D3D12::pipelineBindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXbuffer buffer, u32 binding, u32 offset) {
-	return KGFX_HANDLE_NULL;
-}
-
-void D3D12::pipelineUnbindDescriptorSetBuffer(KGFXpipeline pipeline, KGFXuniformbuffer uniformBuffer) {
-
 }
 
 void D3D12::destroyShader(KGFXshader shader) {
@@ -1094,23 +1881,373 @@ void D3D12::destroyPipeline(KGFXpipeline pipeline) {
 		return;
 	}
 
+	if (pipeline->rootSignature != emptyRootSignature) {
+		RELEASE(pipeline->rootSignature);
+	}
 	RELEASE(pipeline->commandList);
 	RELEASE(pipeline->pipeline);
 	delete pipeline;
 }
 
 void D3D12::destroyBuffer(KGFXbuffer buffer) {
+	if (buffer == nullptr) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return;
+	}
 
-}
-
-void D3D12::destroyMesh(KGFXmesh mesh) {
-
+	RELEASE(buffer->resource);
+	delete buffer;
 }
 
 void D3D12::destroyTexture(KGFXtexture texture) {
+	if (texture == nullptr) {
+		DEBUG_OUT("Invalid KGFXtexture");
+		return;
+	}
 
+	RELEASE(texture->heap);
+	RELEASE(texture->resource);
+	delete texture;
 }
 
 void D3D12::destroySampler(KGFXsampler sampler) {
+	if (sampler == nullptr) {
+		DEBUG_OUT("Invalid KGFXsampler");
+		return;
+	}
 
+	RELEASE(sampler->heap);
+	delete sampler;
+}
+
+KGFXcommandlist D3D12::createCommandList() {
+	KGFXcommandlist commandList = new KGFXcommandlist_t{};
+	resetCommand(commandList);
+	return commandList;
+}
+
+void D3D12::resetCommand(KGFXcommandlist commandList) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	commandList->vertexBuffer = KGFX_HANDLE_NULL;
+	commandList->indexBuffer = KGFX_HANDLE_NULL;
+	commandList->pipeline = KGFX_HANDLE_NULL;
+	commandList->presentCommand = false;
+}
+
+void D3D12::bindPipelineCommand(KGFXcommandlist commandList, KGFXpipeline pipeline) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	HRESULT hr = commandAllocator->Reset();
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to reset D3D12 command allocator");
+		return;
+	}
+
+	hr = pipeline->commandList->Reset(commandAllocator, pipeline->pipeline);
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to reset D3D12 command list");
+		return;
+	}
+
+	pipeline->commandList->SetGraphicsRootSignature(pipeline->rootSignature);
+	pipeline->commandList->RSSetViewports(1, &viewport);
+	pipeline->commandList->RSSetScissorRects(1, &scissor);
+
+	D3D12_RESOURCE_BARRIER barrier = {};
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	barrier.Transition.pResource = renderTargets[frameIndex];
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	pipeline->commandList->ResourceBarrier(1, &barrier);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvDescHeap->GetCPUDescriptorHandleForHeapStart();
+	handle.ptr += frameIndex * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+	pipeline->commandList->OMSetRenderTargets(1, &handle, FALSE, nullptr);
+
+	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+	pipeline->commandList->ClearRenderTargetView(handle, clearColor, 0, nullptr);
+
+	commandList->pipeline = pipeline;
+}
+
+void D3D12::bindVertexBufferCommand(KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return;
+	}
+
+	commandList->vertexBinding = binding;
+	commandList->vertexBuffer = buffer;
+}
+
+void D3D12::bindIndexBufferCommand(KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return;
+	}
+
+	commandList->indexBinding = binding;
+	commandList->indexBuffer = buffer;
+}
+
+void D3D12::bindDescriptorSetBufferCommand(KGFXcommandlist commandList, KGFXbuffer buffer, u32 binding) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer");
+		return;
+	}
+
+	if (commandList->pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (commandList->pipeline->commandList == nullptr) {
+		DEBUG_OUT("Invalid D3D12 command list");
+		return;
+	}
+
+	D3D12_GPU_VIRTUAL_ADDRESS address = buffer->resource->GetGPUVirtualAddress();
+	commandList->pipeline->commandList->SetGraphicsRootConstantBufferView(binding, address);
+}
+
+void D3D12::bindDescriptorSetTextureCommand(KGFXcommandlist commandList, KGFXtexture texture, KGFXsampler sampler, u32 binding) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (texture == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXtexture");
+		return;
+	}
+
+	if (commandList->pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Pipeline not bound to command list yet");
+		return;
+	}
+
+	KGFXd3d12rootparam_t rootParam = {};
+	rootParam.binding = binding;
+	rootParam.type = KGFX_D3D12_ROOT_PARAM_TYPE_TEXTURE;
+
+	commandList->pipeline->commandList->SetDescriptorHeaps(1, &texture->heap);
+	D3D12_GPU_DESCRIPTOR_HANDLE handle = texture->heap->GetGPUDescriptorHandleForHeapStart();
+	commandList->pipeline->commandList->SetGraphicsRootDescriptorTable(commandList->pipeline->rootParameterMap[rootParam], handle);
+
+	if (sampler != KGFX_HANDLE_NULL) {
+		if (sampler->heap == nullptr) {
+			DEBUG_OUT("Invalid sampler D3D12 descriptor heap");
+			return;
+		}
+
+		rootParam.type = KGFX_D3D12_ROOT_PARAM_TYPE_SAMPLER;
+
+		commandList->pipeline->commandList->SetDescriptorHeaps(1, &sampler->heap);
+		handle = sampler->heap->GetGPUDescriptorHandleForHeapStart();
+		commandList->pipeline->commandList->SetGraphicsRootDescriptorTable(commandList->pipeline->rootParameterMap[rootParam], handle);
+	} else {
+		rootParam.type = KGFX_D3D12_ROOT_PARAM_TYPE_SAMPLER;
+
+		handle = defaultSamplerHeap->GetGPUDescriptorHandleForHeapStart();
+		commandList->pipeline->commandList->SetGraphicsRootDescriptorTable(commandList->pipeline->rootParameterMap[rootParam], handle);
+	}
+}
+
+void D3D12::drawCommand(KGFXcommandlist commandList, u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (commandList->pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (commandList->vertexBuffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid vertex KGFXbuffer");
+		return;
+	}
+
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
+	vertexBufferView.BufferLocation = commandList->vertexBuffer->resource->GetGPUVirtualAddress();
+	vertexBufferView.StrideInBytes = commandList->pipeline->vertexStride;
+	vertexBufferView.SizeInBytes = commandList->vertexBuffer->size;
+
+	commandList->pipeline->commandList->IASetPrimitiveTopology(commandList->pipeline->d3dTopology);
+	commandList->pipeline->commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+	commandList->pipeline->commandList->DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
+void D3D12::drawIndexedCommand(KGFXcommandlist commandList, u32 indexCount, u32 instanceCount, u32 firstIndex, s32 vertexOffset, u32 firstInstance) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (commandList->pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (commandList->vertexBuffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid vertex KGFXbuffer");
+		return;
+	}
+
+	if (commandList->indexBuffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid index KGFXbuffer");
+		return;
+	}
+
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
+	vertexBufferView.BufferLocation = commandList->vertexBuffer->resource->GetGPUVirtualAddress();
+	vertexBufferView.StrideInBytes = commandList->pipeline->vertexStride;
+	vertexBufferView.SizeInBytes = commandList->vertexBuffer->size;
+
+	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
+	indexBufferView.BufferLocation = commandList->indexBuffer->resource->GetGPUVirtualAddress();
+	indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	indexBufferView.SizeInBytes = commandList->indexBuffer->size;
+
+	commandList->pipeline->commandList->IASetPrimitiveTopology(commandList->pipeline->d3dTopology);
+	commandList->pipeline->commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+	commandList->pipeline->commandList->IASetIndexBuffer(&indexBufferView);
+	commandList->pipeline->commandList->DrawIndexedInstanced(indexCount, instanceCount, firstIndex, vertexOffset, 0);
+}
+
+void D3D12::presentCommand(KGFXcommandlist commandList) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (commandList->pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (commandList->pipeline->commandList == nullptr) {
+		DEBUG_OUT("Invalid D3D12 command list");
+		return;
+	}
+
+	commandList->presentCommand = true;
+}
+
+void D3D12::submitCommands(KGFXcommandlist commandList) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	if (commandList->pipeline == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXpipeline");
+		return;
+	}
+
+	if (commandList->pipeline->commandList == nullptr) {
+		DEBUG_OUT("Invalid D3D12 command list");
+		return;
+	}
+
+	D3D12_RESOURCE_BARRIER presentBarrier = {};
+	presentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	presentBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	presentBarrier.Transition.pResource = renderTargets[frameIndex];
+	presentBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	presentBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+	presentBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+	commandList->pipeline->commandList->ResourceBarrier(1, &presentBarrier);
+
+	HRESULT hr = commandList->pipeline->commandList->Close();
+	if (FAILED(hr)) {
+		DEBUG_OUT("Failed to close D3D12 command list");
+		return;
+	}
+
+	commandQueue->ExecuteCommandLists(1, reinterpret_cast<ID3D12CommandList**>(&commandList->pipeline->commandList));
+
+	if (commandList->presentCommand) {
+		u32 flags = 0;
+
+		DXGI_PRESENT_PARAMETERS params = {};
+		hr = swapchain->Present1(1, flags, &params);
+		if (FAILED(hr)) {
+			if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+				DEBUG_OUT("D3D12 Device removed or reset");
+				#ifdef KGFX_D3D12_BREADCRUMBS
+				collectBreadcrumbs(commandList, commandList->pipeline);
+				#endif
+				return;
+			} else {
+				DEBUG_OUT("Failed to present");
+				return;
+			}
+		}
+
+		u64 value = inFlightFenceValue;
+
+		hr = commandQueue->Signal(inFlightFence, value);
+		if (FAILED(hr)) {
+			DEBUG_OUT("Failed to signal in flight fence");
+			return;
+		}
+
+		++inFlightFenceValue;
+		if (inFlightFence->GetCompletedValue() < value) {
+			hr = inFlightFence->SetEventOnCompletion(value, inFlightFenceEvent);
+			if (FAILED(hr)) {
+				DEBUG_OUT("Failed to set event on completion");
+				return;
+			}
+
+			WaitForSingleObject(inFlightFenceEvent, INFINITE);
+		}
+
+		frameIndex = swapchain->GetCurrentBackBufferIndex();
+	}
+
+	commandList->presentCommand = false;
+}
+
+void D3D12::destroyCommandList(KGFXcommandlist commandList) {
+	if (commandList == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXcommandlist");
+		return;
+	}
+
+	delete commandList;
 }
