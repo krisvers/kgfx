@@ -1,9 +1,16 @@
 package com.krisvers.kgfx;
 
 public class KGFXcontext {
+	private long handle;
 	public KGFXcontext(int major, int minor, int patch, KGFXwindow window) {
-		return KGFX.createContext(major, minor, patch, window);
+		handle = KGFXjni.createContext(major, minor, patch, window);
 	}
 
-	public native void createShader();
+	public long getHandle() {
+		return handle;
+	}
+
+	public void destroy() {
+		KGFXjni.destroyContext(handle);
+	}
 }

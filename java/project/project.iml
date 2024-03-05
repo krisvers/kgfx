@@ -17,5 +17,7 @@
         <SOURCES />
       </library>
     </orderEntry>
+    <orderEntry type="library" name="glfw" level="project" />
+    <orderEntry type="library" name="lwjgl" level="project" />
   </component>
 </module>
