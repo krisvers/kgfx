@@ -29,7 +29,7 @@ mac-dummy-dynamic:
 	clang -dynamic -shared -fPIC src/kgfx/kgfx_dummy.c -o build/libkgfx.dylib $(FLAGS) -Wno-switch
 
 mac-kgfx_gh-dynamic:
-	clang -dynamic -shared -fPIC src/kgfx_gh/kgfx_gh_cocoa.m -o build/libkgfx_gh.dylib $(FLAGS) -Llib/mac -lglfw3 -framework IOKit -framework Cocoa -framework QuartzCore
+	clang -undefined dynamic_lookup -shared -fPIC src/kgfx_gh/kgfx_gh_cocoa.m -o build/libkgfx_gh.dylib $(FLAGS) -Llib/mac -framework IOKit -framework Cocoa -framework QuartzCore
 
 mac-metal:
 	clang -std=c99 -c src/main.c -o obj/main.o $(FLAGS)
