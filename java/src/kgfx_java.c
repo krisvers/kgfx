@@ -1,6 +1,7 @@
 #include <kgfx/kgfx.h>
 #include <jni.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createContext(JNIEnv* env, jclass clazz, jint major, jint minor, jint patch, jobject window) {
 	jclass windowClass = (*env)->GetObjectClass(env, window);
@@ -36,7 +37,7 @@ JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_destroyContext(JNIEnv* env
 	kgfxDestroyContext((KGFXcontext) context);
 }
 
-JNIEXPORT long JNICALL Java_com_krisvers_kgfx_KGFXjni_createShader(JNIEnv* env, jclass clazz, jlong context, jstring entryName, jbyteArray data, jint type, jint medium) {
+JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createShader(JNIEnv* env, jclass clazz, jlong context, jstring entryName, jbyteArray data, jint type, jint medium) {
 	const char* entry = (*env)->GetStringUTFChars(env, entryName, 0);
 	jsize len = (*env)->GetArrayLength(env, data);
 	jbyte* bytes = (*env)->GetByteArrayElements(env, data, 0);
@@ -52,22 +53,128 @@ JNIEXPORT long JNICALL Java_com_krisvers_kgfx_KGFXjni_createShader(JNIEnv* env, 
 
 	(*env)->ReleaseStringUTFChars(env, entryName, entry);
 	(*env)->ReleaseByteArrayElements(env, data, bytes, 0);
-	return (long) shader;
+	return (jlong) shader;
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_destroyShader(JNIEnv* env, jclass clazz, jlong context, jlong shader) {
 	kgfxDestroyShader((KGFXcontext) context, (KGFXshader) shader);
 }
 
-JNIEXPORT long JNICALL Java_com_krisvers_kgfx_KGFXjni_createPipeline(JNIEnv* env, jclass clazz, jlong context, jlongArray shaders, KGFXpipelinelayout layout, jint cullMode, jint frontFace, jint fillMode, jint topology) {
-	KGFXshader shaders[6] = {
-		(KGFXshader) vertexShader,
-		(KGFXshader) fragmentShader,
-		(KGFXshader) geometryShader,
-		(KGFXshader) tessControlShader,
-		(KGFXshader) tessEvalShader,
-		(KGFXshader) computeShader
+JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createPipeline(JNIEnv* env, jclass clazz, jlong context, jlongArray shaders, jobject jlayout, jint cullMode, jint frontFace, jint fillMode, jint topology) {
+	KGFXpipelinedesc desc = {
+		.cullMode = (KGFXcullmode) cullMode,
+		.frontFace = (KGFXfrontface) frontFace,
+		.fillMode = (KGFXfillmode) fillMode,
+		.topology = (KGFXtopology) topology
 	};
-	KGFXpipeline pipeline = kgfxCreatePipeline((KGFXcontext) context, shaders, (KGFXvertexlayout) vertexLayout);
-	return (long) pipeline;
-})
+	
+	jclass layoutClass = (*env)->GetObjectClass(env, jlayout);
+	jfieldID field = (*env)->GetFieldID(env, layoutClass, "bindings", "[Lcom/krisvers/kgfx/KGFXpipelinebinding;");
+	jobjectArray jbindings = (jobjectArray) (*env)->GetObjectField(env, jlayout, field);
+	if (jbindings == NULL) {
+		printf("Failed to get bindings\n");
+		return 0;
+	}
+	
+	jsize len = (*env)->GetArrayLength(env, jbindings);
+	KGFXpipelinebinding* bindings = malloc(sizeof(KGFXpipelinebinding) * len);
+	if (bindings == NULL) {
+		printf("Failed to malloc binding array\n");
+		return 0;
+	}
+	
+	for (jsize i = 0; i < len; i++) {
+		jobject binding = (*env)->GetObjectArrayElement(env, jbindings, i);
+		jclass bindingClass = (*env)->GetObjectClass(env, binding);
+
+		field = (*env)->GetFieldID(env, bindingClass, "inputRate", "I");
+		bindings[i].inputRate = (KGFXinputrate) (*env)->GetIntField(env, binding, field);
+
+		field = (*env)->GetFieldID(env, bindingClass, "bindpoint", "I");
+		bindings[i].bindpoint = (*env)->GetIntField(env, binding, field);
+
+		field = (*env)->GetFieldID(env, bindingClass, "binding", "I");
+		bindings[i].binding = (*env)->GetIntField(env, binding, field);
+
+		field = (*env)->GetFieldID(env, bindingClass, "attributes", "[Lcom/krisvers/kgfx/KGFXpipelineattribute;");
+		jobjectArray attributes = (jobjectArray) (*env)->GetObjectField(env, binding, field);
+
+		jsize attrLen = (*env)->GetArrayLength(env, attributes);
+		bindings[i].pAttributes = malloc(sizeof(KGFXpipelineattribute) * attrLen);
+		if (bindings[i].pAttributes == NULL) {
+			printf("Failed to malloc attribute array\n");
+			for (jsize j = 0; j < i; j++) {
+				free(bindings[j].pAttributes);
+			}
+			free(bindings);
+			return 0;
+		}
+		bindings[i].attributeCount = attrLen;
+		
+		for (jsize j = 0; j < attrLen; j++) {
+			jobject attribute = (*env)->GetObjectArrayElement(env, attributes, j);
+			jclass attributeClass = (*env)->GetObjectClass(env, attribute);
+
+			field = (*env)->GetFieldID(env, attributeClass, "semanticName", "Ljava/lang/String;");
+			jstring string = (jstring) (*env)->GetObjectField(env, attribute, field);
+			if (string == NULL) {
+				printf("Invalid semanticName\n");
+				for (jsize j = 0; j < i; j++) {
+					free(bindings[j].pAttributes);
+				}
+				free(bindings);
+				return 0;
+			}
+			bindings[i].pAttributes[j].semanticName = (*env)->GetStringUTFChars(env, string, NULL);
+			
+			field = (*env)->GetFieldID(env, attributeClass, "type", "I");
+			bindings[i].pAttributes[j].type = (KGFXdatatype) (*env)->GetIntField(env, attribute, field);
+			
+			field = (*env)->GetFieldID(env, attributeClass, "location", "I");
+			bindings[i].pAttributes[j].location = (*env)->GetIntField(env, attribute, field);
+		}
+	}
+
+	desc.layout.pBindings = bindings;
+	desc.layout.bindingCount = len;
+	desc.layout.descriptorSetCount = 0;
+	desc.layout.pDescriptorSets = NULL;
+
+	desc.shaderCount = (*env)->GetArrayLength(env, shaders);
+	desc.pShaders = (KGFXshader*) (*env)->GetLongArrayElements(env, shaders, 0);
+	if (desc.pShaders == NULL) {
+		printf("Failed to malloc shader array\n");
+		for (jsize i = 0; i < len; i++) {
+			jobject binding = (*env)->GetObjectArrayElement(env, jbindings, i);
+			jclass bindingClass = (*env)->GetObjectClass(env, binding);
+			field = (*env)->GetFieldID(env, bindingClass, "attributes", "[Lcom/krisvers/kgfx/KGFXpipelineattribute;");
+			jobjectArray attributes = (jobjectArray) (*env)->GetObjectField(env, binding, field);
+			for (u32 j = 0; j < bindings[i].attributeCount; ++j) {
+				jobject attribute = (*env)->GetObjectArrayElement(env, attributes, j);
+				jclass attributeClass = (*env)->GetObjectClass(env, attribute);
+				(*env)->ReleaseStringUTFChars(env, (jstring)(*env)->GetObjectField(env, attribute, (*env)->GetFieldID(env, attributeClass, "semanticName", "Ljava/lang/String;")), bindings[i].pAttributes[j].semanticName);
+			}
+			(*env)->ReleaseLongArrayElements(env, shaders, (jlong*) desc.pShaders, 0);
+		}
+		free(bindings);
+		return 0;
+	}
+	
+	jlong pipeline = (jlong) kgfxCreatePipeline((KGFXcontext) context, desc);
+	for (jsize i = 0; i < len; i++) {
+		jobject binding = (*env)->GetObjectArrayElement(env, jbindings, i);
+		jclass bindingClass = (*env)->GetObjectClass(env, binding);
+		field = (*env)->GetFieldID(env, bindingClass, "attributes", "[Lcom/krisvers/kgfx/KGFXpipelineattribute;");
+
+		for (u32 j = 0; j < bindings[i].attributeCount; j++) {
+			jobject attribute = (*env)->GetObjectArrayElement(env, (jobjectArray) (*env)->GetObjectField(env, binding, field), j);
+			jclass attributeClass = (*env)->GetObjectClass(env, attribute);
+			(*env)->ReleaseStringUTFChars(env, (jstring)(*env)->GetObjectField(env, attribute, (*env)->GetFieldID(env, attributeClass, "semanticName", "Ljava/lang/String;")), bindings[i].pAttributes[j].semanticName);
+		}
+		free(bindings[i].pAttributes);
+	}
+	(*env)->ReleaseLongArrayElements(env, shaders, (jlong*) desc.pShaders, 0);
+	free(bindings);
+
+	return pipeline;
+}

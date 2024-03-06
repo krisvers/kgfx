@@ -35,7 +35,15 @@ public class Main {
 			return;
 		}
 
+		KGFXpipelinelayout layout = new KGFXpipelinelayout(new KGFXpipelinebinding[1], new KGFXdescriptorsetdesc[0]);
+		layout.bindings[0] = new KGFXpipelinebinding(0, new KGFXpipelineattribute[1], 0, 0);
+		layout.bindings[0].attributes[0] = new KGFXpipelineattribute("POSITION", 3, 0);
 
+		long pipeline = KGFXjni.createPipeline(context.getHandle(), new long[] { vshader, fshader }, layout, 0, 0, 0, 0);
+		if (pipeline == 0) {
+			System.out.println("Failed to create pipeline");
+			return;
+		}
 
 		while (!GLFW.glfwWindowShouldClose(window)) {
 			GLFW.glfwPollEvents();
