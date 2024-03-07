@@ -9,3 +9,6 @@ build/
 ./x86/
 ./x64/
 __pycache__
+*.exp
+*.idb
+*.ilk
