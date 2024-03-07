@@ -6,6 +6,10 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window);
+#ifndef KGFX_GH_API
+#define KGFX_GH_API
+#endif
+
+KGFX_GH_API KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window);
 
 #endif

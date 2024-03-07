@@ -188,7 +188,7 @@ JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createBuffer(JNIEnv* env,
 		printf("If data is null, then size must not be 0\n");
 		return 0;
 	}
-	
+
 	if (size < 0) {
 		printf("Size must not be negative\n");
 		return 0;
@@ -216,39 +216,72 @@ JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createBuffer(JNIEnv* env,
 	return (jlong) kgfxCreateBuffer((KGFXcontext) context, desc);
 }
 
+JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createBufferFloats(JNIEnv* env, jclass clazz, jlong context, jint location, jint usage, jfloatArray data, jint size) {
+	if (data == NULL && size == 0) {
+		printf("If data is null, then size must not be 0\n");
+		return 0;
+	}
+
+	if (size < 0) {
+		printf("Size must not be negative\n");
+		return 0;
+	}
+
+	jfloat* bytes = NULL;
+	jsize len = 0;
+	if (data != NULL) {
+		bytes = (*env)->GetFloatArrayElements(env, data, NULL);
+		len = (*env)->GetArrayLength(env, data);
+
+		if (size > len * sizeof(jfloat)) {
+			printf("If data is not null, the provided size must not be larger than data.length\n");
+			(*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
+			return 0;
+		}
+	}
+
+	KGFXbufferdesc desc = {
+		.location = location,
+		.usage = usage,
+		.pData = bytes,
+		.size = size,
+	};
+	return (jlong) kgfxCreateBuffer((KGFXcontext) context, desc);
+}
+
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_destroyBuffer(JNIEnv* env, jclass clazz, jlong context, jlong buffer) {
 	kgfxDestroyBuffer((KGFXcontext) context, (KGFXbuffer) buffer);
 }
 
 
 JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createCommandList(JNIEnv* env, jclass clazz, jlong context) {
-
+	return (jlong) kgfxCreateCommandList((KGFXcontext) context);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_commandReset(JNIEnv* env, jclass clazz, jlong context, jlong commandList) {
-
+	kgfxCommandReset((KGFXcontext) context, (KGFXcommandlist) commandList);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_commandBindPipeline(JNIEnv* env, jclass clazz, jlong context, jlong commandList,jlong pipeline) {
-
+	kgfxCommandBindPipeline((KGFXcontext) context, (KGFXcommandlist) commandList, (KGFXpipeline) pipeline);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_commandBindVertexBuffer(JNIEnv* env, jclass clazz, jlong context, jlong commandList,jlong buffer, jint binding) {
-
+	kgfxCommandBindVertexBuffer((KGFXcontext) context, (KGFXcommandlist) commandList, (KGFXbuffer) buffer, binding);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_commandDraw(JNIEnv* env, jclass clazz, jlong context, jlong commandList, jint vertexCount, jint instanceCount, jint firstVertex, jint firstInstance) {
-
+	kgfxCommandDraw((KGFXcontext) context, (KGFXcommandlist) commandList, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_commandPresent(JNIEnv* env, jclass clazz, jlong context, jlong commandList) {
-
+	kgfxCommandPresent((KGFXcontext) context, (KGFXcommandlist) commandList);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_commandListSubmit(JNIEnv* env, jclass clazz, jlong context, jlong commandList) {
-
+	kgfxCommandListSubmit((KGFXcontext) context, (KGFXcommandlist) commandList);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_destroyCommandList(JNIEnv* env, jclass clazz, jlong context, jlong commandList) {
-
+	kgfxDestroyCommandList((KGFXcontext) context, (KGFXcommandlist) commandList);
 }

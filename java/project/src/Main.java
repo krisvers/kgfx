@@ -8,11 +8,11 @@ import java.nio.ByteBuffer;
 
 public class Main {
 	public static byte[] floatArrayToByteArray(float[] input) {
-		byte[] ret = new byte[input.length*4];
+		ByteBuffer buffer = ByteBuffer.allocate(input.length * Float.BYTES);
 		for (int x = 0; x < input.length; x++) {
-			ByteBuffer.wrap(ret, x*4, 4).putFloat(input[x]);
+			buffer.putFloat(input[x]);
 		}
-		return ret;
+		return buffer.array();
 	}
 
 	public static void main(String[] args) {
@@ -34,81 +34,39 @@ public class Main {
 		KGFXcontext context = new KGFXcontext(0, 0, 0, kgfxWindow);
 
 		String source = "struct vinput_t { float2 position : POSITION; }; struct pinput_t { float4 position : SV_POSITION; }; pinput_t vmain(vinput_t input) { pinput_t output; output.position = float4(input.position, 0.0f, 1.0f); return output; } float4 pmain(pinput_t input) : SV_TARGET { return float4(1, 0, 0, 1); }";
-		long vshader = KGFXjni.createShader(context.getHandle(), "vmain", source.getBytes(StandardCharsets.UTF_8), 0, 2);
-		if (vshader == 0) {
-			System.out.println("Failed to create shader");
-			context.destroy();
-			GLFW.glfwDestroyWindow(window);
-			GLFW.glfwTerminate();
-			return;
-		}
-
-		long fshader = KGFXjni.createShader(context.getHandle(), "pmain", source.getBytes(StandardCharsets.UTF_8), 1, 2);
-		if (fshader == 0) {
-			System.out.println("Failed to create shader");
-			context.destroy();
-			GLFW.glfwDestroyWindow(window);
-			GLFW.glfwTerminate();
-			return;
-		}
+		KGFXshader vshader = context.createShader("vmain", source, 0, 2);
+		KGFXshader fshader = context.createShader("pmain", source, 1, 2);
 
 		KGFXpipelinelayout layout = new KGFXpipelinelayout(new KGFXpipelinebinding[1], new KGFXdescriptorsetdesc[0]);
 		layout.bindings[0] = new KGFXpipelinebinding(0, new KGFXpipelineattribute[1], 0, 0);
 		layout.bindings[0].attributes[0] = new KGFXpipelineattribute("POSITION", 2, 0);
 
-		long pipeline = KGFXjni.createPipeline(context.getHandle(), new long[] { vshader, fshader }, layout, 0, 0, 0, 0);
-		KGFXjni.destroyShader(context.getHandle(), vshader);
-		KGFXjni.destroyShader(context.getHandle(), fshader);
-
-		if (pipeline == 0) {
-			System.out.println("Failed to create pipeline");
-			context.destroy();
-			GLFW.glfwDestroyWindow(window);
-			GLFW.glfwTerminate();
-			return;
-		}
+		KGFXpipeline pipeline = context.createPipeline(new KGFXshader[] {vshader, fshader}, layout, 0, 0, 0, 2);
+		vshader.destroy();
+		fshader.destroy();
 
 		float[] vertices = {
-			1, 1,
-			1, 0,
-			0, 1,
+			-0.5f, -0.5f,
+			0.5f, -0.5f,
+			0.0f, 0.5f
 		};
 
-		byte[] bytes = floatArrayToByteArray(vertices);
-		long buffer = KGFXjni.createBuffer(context.getHandle(), 0, 1, bytes, bytes.length);
-		if (buffer == 0) {
-			System.out.println("Failed to create buffer");
-			KGFXjni.destroyPipeline(context.getHandle(), pipeline);
-			context.destroy();
-			GLFW.glfwDestroyWindow(window);
-			GLFW.glfwTerminate();
-			return;
-		}
-
-		long commandList = KGFXjni.createCommandList(context.getHandle());
-		if (commandList == 0) {
-			System.out.println("Failed to create command list");
-			KGFXjni.destroyBuffer(context.getHandle(), buffer);
-			KGFXjni.destroyPipeline(context.getHandle(), pipeline);
-			context.destroy();
-			GLFW.glfwDestroyWindow(window);
-			GLFW.glfwTerminate();
-			return;
-		}
+		KGFXbuffer buffer = context.createBuffer(1, 1, vertices, vertices.length * Float.BYTES);
+		KGFXcommandlist commandList = context.createCommandList();
 
 		while (!GLFW.glfwWindowShouldClose(window)) {
-			KGFXjni.commandReset(context.getHandle(), commandList);
-			KGFXjni.commandBindVertexBuffer(context.getHandle(), commandList, buffer, 0);
-			KGFXjni.commandBindPipeline(context.getHandle(), commandList, pipeline);
-			KGFXjni.commandDraw(context.getHandle(), commandList, 3, 1, 0, 0);
-			KGFXjni.commandPresent(context.getHandle(), commandList);
-			KGFXjni.commandListSubmit(context.getHandle(), commandList);
+			commandList.reset();
+			commandList.bindVertexBuffer(buffer, 0);
+			commandList.bindPipeline(pipeline);
+			commandList.draw(3, 1, 0, 0);
+			commandList.present();
+			commandList.submit();
 			GLFW.glfwPollEvents();
 		}
 
-		KGFXjni.destroyCommandList(context.getHandle(), commandList);
-		KGFXjni.destroyBuffer(context.getHandle(), buffer);
-		KGFXjni.destroyPipeline(context.getHandle(), pipeline);
+		commandList.destroy();
+		buffer.destroy();
+		pipeline.destroy();
 		context.destroy();
 		GLFW.glfwDestroyWindow(window);
 		GLFW.glfwTerminate();

@@ -4,8 +4,29 @@ import java.nio.ByteBuffer;
 
 public class KGFXjni {
 	static {
-		System.loadLibrary("kgfx");
-		System.loadLibrary("kgfx_java");
+		try {
+			System.loadLibrary("kgfx");
+			System.loadLibrary("kgfx_java");
+		} catch (UnsatisfiedLinkError e) {
+			String kgfx;
+			String kgfx_java;
+
+			String os = System.getProperty("os.name").toLowerCase();
+			if (os.contains("win")) {
+				kgfx = "kgfx.dll";
+				kgfx_java = "kgfx_java.dll";
+			} else if (os.contains("nix") || os.contains("nux")) {
+				kgfx = "libkgfx.so";
+				kgfx_java = "libkgfx_java.so";
+			} else if (os.contains("mac")) {
+				kgfx = "libkgfx.dylib";
+				kgfx_java = "libkgfx_java.dylib";
+			} else {
+				throw new RuntimeException("Unsupported platform");
+			}
+
+			throw new RuntimeException("Failed to load kgfx library " + kgfx + " or " + kgfx_java);
+		}
 	}
 
 	public static native long createContext(int major, int minor, int patch, KGFXwindow window);
@@ -18,6 +39,7 @@ public class KGFXjni {
 	public static native void destroyPipeline(long context, long pipeline);
 
 	public static native long createBuffer(long context, int location, int usage, byte[] data, int size);
+	public static native long createBufferFloats(long context, int location, int usage, float[] data, int size);
 	public static native void destroyBuffer(long context, long buffer);
 
 	public static native long createCommandList(long context);
