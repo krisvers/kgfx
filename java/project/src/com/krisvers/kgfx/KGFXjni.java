@@ -40,6 +40,8 @@ public class KGFXjni {
 
 	public static native long createBuffer(long context, int location, int usage, byte[] data, int size);
 	public static native long createBufferFloats(long context, int location, int usage, float[] data, int size);
+	public static native byte[] mapBufferBytes(long context, long buffer);
+	public static native float[] mapBufferFloats(long context, long buffer);
 	public static native void destroyBuffer(long context, long buffer);
 
 	public static native long createCommandList(long context);

@@ -4,13 +4,14 @@
 #include <QuartzCore/QuartzCore.h>
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfxgh_KGFXGHjni_kgfxWindowSetupCocoa(JNIEnv* env, jclass jclazz, jobject window) {
-	jfieldID field = (*env)->GetFieldID(env, jclazz, "window", "J");
+	jclass windowClass = (*env)->GetObjectClass(env, window);
+	jfieldID field = (*env)->GetFieldID(env, windowClass, "window", "J");
 	jlong w = (*env)->GetLongField(env, window, field);
 
-	NSWindow* win = (NSWindow*) w;
-	field = (*env)->GetFieldID(env, jclazz, "contentView", "J");
-	(*env)->SetLongField(env, window, field, [win contentView]);
+	NSWindow* win = (__bridge NSWindow*) (void*) w;
+	field = (*env)->GetFieldID(env, windowClass, "contentView", "J");
+	(*env)->SetLongField(env, window, field, (jlong) [win contentView]);
 
-	field = (*env)->GetFieldID(env, jclazz, "layer", "J");
-	(*env)->SetLongField(env, window, field, [[win contentView] layer]);
+	field = (*env)->GetFieldID(env, windowClass, "layer", "J");
+	(*env)->SetLongField(env, window, field, (jlong) [[win contentView] layer]);
 }

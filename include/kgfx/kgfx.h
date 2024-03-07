@@ -354,6 +354,8 @@ KGFX_API void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer);
 
 KGFX_API KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
 
+KGFX_API u32 kgfxBufferSize(KGFXcontext ctx, KGFXbuffer buffer);
+
 KGFX_API void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer);
 
 KGFX_API KGFXtexture kgfxCreateTexture(KGFXcontext ctx, KGFXtexturedesc textureDesc);

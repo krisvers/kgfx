@@ -2,6 +2,7 @@
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createContext(JNIEnv* env, jclass clazz, jint major, jint minor, jint patch, jobject window) {
 	jclass windowClass = (*env)->GetObjectClass(env, window);
@@ -24,6 +25,10 @@ JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createContext(JNIEnv* env
 			jfieldID field = (*env)->GetFieldID(env, windowClass, "contentView", "J");
 			jlong view = (*env)->GetLongField(env, window, field);
 			w.contentView = (void*) view;
+
+			field = (*env)->GetFieldID(env, windowClass, "layer", "J");
+			jlong layer = (*env)->GetLongField(env, window, field);
+			w.layer = (void*) layer;
 		}
 		#endif
 	#endif
@@ -235,7 +240,7 @@ JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createBufferFloats(JNIEnv
 
 		if (size > len * sizeof(jfloat)) {
 			printf("If data is not null, the provided size must not be larger than data.length\n");
-			(*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
+			(*env)->ReleaseFloatArrayElements(env, data, bytes, JNI_ABORT);
 			return 0;
 		}
 	}
@@ -247,6 +252,38 @@ JNIEXPORT jlong JNICALL Java_com_krisvers_kgfx_KGFXjni_createBufferFloats(JNIEnv
 		.size = size,
 	};
 	return (jlong) kgfxCreateBuffer((KGFXcontext) context, desc);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_krisvers_kgfx_KGFXjni_mapBufferBytes(JNIEnv* env, jclass clazz, jlong context, jlong buffer) {
+	void* mapped = kgfxBufferMap((KGFXcontext) context, (KGFXbuffer) buffer);
+	if (mapped == NULL) {
+		printf("Failed to map KGFX buffer\n");
+		return NULL;
+	}
+
+	u32 size = kgfxBufferSize((KGFXcontext) context, (KGFXbuffer) buffer);
+	jbyteArray bytes = (*env)->NewByteArray(env, size);
+	if (bytes == NULL) {
+		printf("Failed to create new byte array for buffer map\n");
+		kgfxBufferUnmap((KGFXcontext) context, (KGFXbuffer) buffer);
+		return NULL;
+	}
+
+	jboolean isCopy = JNI_FALSE;
+	jbyte* pbytes = (*env)->GetByteArrayElements(env, bytes, &isCopy);
+	if (pbytes == NULL) {
+		printf("Failed to obtain new byte array elements for buffer map\n");
+		kgfxBufferUnmap((KGFXcontext) context, (KGFXbuffer) buffer);
+		return NULL;
+	}
+
+	memcpy(pbytes, mapped, size);
+	(*env)->ReleaseByteArrayElements(env, bytes, pbytes, 0);
+	return bytes;
+}
+
+JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_unmapBuffer(JNIEnv* env, jclass clazz, jlong context, jlong buffer) {
+	kgfxBufferUnmap((KGFXcontext) context, (KGFXbuffer) buffer);
 }
 
 JNIEXPORT void JNICALL Java_com_krisvers_kgfx_KGFXjni_destroyBuffer(JNIEnv* env, jclass clazz, jlong context, jlong buffer) {

@@ -93,6 +93,10 @@ void kgfxBufferUnmap(KGFXcontext ctx, KGFXbuffer buffer) {
 	return;
 }
 
+u32 kgfxBufferSize(KGFXcontext ctx, KGFXbuffer buffer) {
+	return *((u32*) buffer);
+}
+
 KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {
 	if (ctx == NULL) {
 		printf("Invalid context\n");
