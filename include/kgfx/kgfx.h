@@ -16,7 +16,7 @@ extern "C" {
 	3 nibbles for patch
 	1.2.3 = 0x01002003
 */
-#define KGFX_MAKE_VERSION(major, minor, patch) ((u32) (((major << 24) & 0xFF) | ((minor << 12) & 0xFFF) | (patch & 0xFFF)))
+#define KGFX_MAKE_VERSION(major, minor, patch) ((u32) (((major & 0xFF) << 24) | ((minor & 0xFFF) << 12) | (patch & 0xFFF)))
 #define KGFX_HEADER_VERSION 0x01000000
 #define KGFX_ANY_MAJOR 0xFF
 #define KGFX_ANY_MINOR 0xFFF
@@ -128,7 +128,7 @@ typedef enum {
 
 typedef enum {
 	KGFX_BINDPOINT_VERTEX = 1,
-	KGFX_BINDPOINT_FRAGMENT = 16,
+	KGFX_BINDPOINT_FRAGMENT = 2,
 	KGFX_BINDPOINT_GEOMETRY = 4,
 	KGFX_BINDPOINT_COMPUTE = 8,
 	KGFX_BINDPOINT_COUNT,

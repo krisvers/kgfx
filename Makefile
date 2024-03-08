@@ -15,6 +15,9 @@ linux-vulkan-static:
 linux-vulkan-dynamic:
 	clang++ -shared -fPIC src/kgfx/kgfx_vulkan.cpp $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o build/libkgfx.so
 
+linux-dummy-dynamic:
+	clang -shared -fPIC src/kgfx/kgfx_dummy.c -o build/libkgfx.so $(FLAGS) -Wno-switch
+
 mac-vulkan:
 	clang -std=c99 -c src/main.c $(shell find src -type f -name "example*.c") $(FLAGS)
 	mv *.o obj/

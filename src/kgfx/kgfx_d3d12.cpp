@@ -6,7 +6,7 @@
 #include <dxgi1_6.h>
 
 #ifdef KGFX_DEBUG
-//#define KGFX_D3D12_VALIDATION
+#define KGFX_D3D12_VALIDATION
 #define KGFX_D3D12_BREADCRUMBS
 #define KGFX_LOG_TO_FILE "kgfx_d3d12.log"
 #include <dxgidebug.h>
@@ -162,6 +162,7 @@ struct D3D12 {
 	KGFXresult uploadBuffer(KGFXbuffer buffer, u32 size, void* data);
 	void* mapBuffer(KGFXbuffer buffer);
 	void unmapBuffer(KGFXbuffer buffer);
+	u32 bufferSize(KGFXbuffer buffer);
 	KGFXresult copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset);
 	KGFXresult copyBufferToTexture(KGFXtexture dstTexture, KGFXbuffer srcBuffer, u32 srcOffset);
 	void destroyBuffer(KGFXbuffer buffer);
@@ -589,6 +590,15 @@ KGFXresult kgfxBufferCopy(KGFXcontext ctx, KGFXbuffer dstBuffer, KGFXbuffer srcB
 	}
 
 	return ctx->d3d12.copyBuffer(dstBuffer, srcBuffer, size, dstOffset, srcOffset);
+}
+
+u32 kgfxBufferSize(KGFXcontext ctx, KGFXbuffer buffer) {
+	if (ctx == nullptr) {
+		DEBUG_OUT("Invalid KGFXcontext");
+		return 0;
+	}
+
+	return ctx->d3d12.bufferSize(buffer);
 }
 
 void kgfxDestroyBuffer(KGFXcontext ctx, KGFXbuffer buffer) {
@@ -1346,6 +1356,15 @@ void D3D12::unmapBuffer(KGFXbuffer buffer) {
 	}
 
 	buffer->resource->Unmap(0, nullptr);
+}
+
+u32 D3D12::bufferSize(KGFXbuffer buffer) {
+	if (buffer == KGFX_HANDLE_NULL) {
+		DEBUG_OUT("Invalid KGFXbuffer provided");
+		return 0;
+	}
+
+	return buffer->size;
 }
 
 KGFXresult D3D12::copyBuffer(KGFXbuffer dstBuffer, KGFXbuffer srcBuffer, u32 size, u32 dstOffset, u32 srcOffset) {

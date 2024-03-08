@@ -28,8 +28,12 @@ public class KGFXcommandlist {
 		KGFXjni.commandBindVertexBuffer(context, handle, buffer.getHandle(), binding);
 	}
 
-	public void bindIndexBuffer(KGFXbuffer buffer) {
-		throw new RuntimeException("Not implemented");
+	public void bindIndexBuffer(KGFXbuffer buffer, int binding) {
+		KGFXjni.commandBindIndexBuffer(context, handle, buffer.getHandle(), binding);
+	}
+
+	public void bindDescriptorSetBuffer(KGFXbuffer buffer, int binding) {
+		KGFXjni.commandBindDescriptorSetBuffer(context, handle, buffer.getHandle(), binding);
 	}
 
 	public void bindPipeline(KGFXpipeline pipeline) {
@@ -38,6 +42,10 @@ public class KGFXcommandlist {
 
 	public void draw(int vertexCount, int instanceCount, int firstVertex, int firstInstance) {
 		KGFXjni.commandDraw(context, handle, vertexCount, instanceCount, firstVertex, firstInstance);
+	}
+
+	public void drawIndexed(int indexCount, int instanceCount, int firstIndex, int vertexOffset, int firstInstance) {
+		KGFXjni.commandDrawIndexed(context, handle, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 	}
 
 	public void present() {

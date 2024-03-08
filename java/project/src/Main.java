@@ -2,19 +2,9 @@ import com.krisvers.kgfx.*;
 import com.krisvers.kgfxgh.*;
 import org.lwjgl.glfw.*;
 
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.nio.ByteBuffer;
+import math.*;
 
 public class Main {
-	public static byte[] floatArrayToByteArray(float[] input) {
-		ByteBuffer buffer = ByteBuffer.allocate(input.length * Float.BYTES);
-		for (int x = 0; x < input.length; x++) {
-			buffer.putFloat(input[x]);
-		}
-		return buffer.array();
-	}
-
 	public static void main(String[] args) {
 		System.out.println("Hello world!");
 
@@ -33,15 +23,51 @@ public class Main {
 		KGFXwindow kgfxWindow = KGFXGHjni.kgfxWindowFromGLFW(window);
 		KGFXcontext context = new KGFXcontext(0, 0, 0, kgfxWindow);
 
-		String source = "struct vinput_t { float2 position : POSITION; }; struct pinput_t { float4 position : SV_POSITION; }; pinput_t vmain(vinput_t input) { pinput_t output; output.position = float4(input.position, 0.0f, 1.0f); return output; } float4 pmain(pinput_t input) : SV_TARGET { return float4(1, 0, 0, 1); }";
-		KGFXshader vshader = context.createShader("vmain", source, 0, 2);
-		KGFXshader fshader = context.createShader("pmain", source, 1, 2);
+		String source =
+			"struct vinput_t { float2 position : POSITION; };\n" +
+			"struct pinput_t { float4 position : SV_POSITION; };\n" +
+			"cbuffer ubo_t : register(b0) { float4x4 mvp; };\n" +
+			"pinput_t vmain(vinput_t input) {\n" +
+				"pinput_t output;\n" +
+				"output.position = mul(float4(input.position, 0.0f, 1.0f), mvp);\n" +
+				"return output;\n" +
+			"}\n" +
+			"float4 pmain(pinput_t input) : SV_TARGET { return float4(1, 0, 0, 1); }";
 
-		KGFXpipelinelayout layout = new KGFXpipelinelayout(new KGFXpipelinebinding[1], new KGFXdescriptorsetdesc[0]);
-		layout.bindings[0] = new KGFXpipelinebinding(0, new KGFXpipelineattribute[1], 0, 0);
-		layout.bindings[0].attributes[0] = new KGFXpipelineattribute("POSITION", 2, 0);
+		KGFXshader vshader = context.createShader(
+			"vmain", source,
+			KGFXjni.KGFX_SHADERTYPE_VERTEX, KGFXjni.KGFX_MEDIUM_HLSL
+		);
 
-		KGFXpipeline pipeline = context.createPipeline(new KGFXshader[] {vshader, fshader}, layout, 0, 0, 0, 2);
+		KGFXshader fshader = context.createShader(
+			"pmain", source,
+			KGFXjni.KGFX_SHADERTYPE_FRAGMENT, KGFXjni.KGFX_MEDIUM_HLSL
+		);
+
+		KGFXpipelinelayout layout = new KGFXpipelinelayout(
+			new KGFXpipelinebinding[1], new KGFXdescriptorsetdesc[1]
+		);
+
+		layout.bindings[0] = new KGFXpipelinebinding(
+			0, new KGFXpipelineattribute[1],
+			KGFXjni.KGFX_BINDPOINT_VERTEX, 0
+		);
+
+		layout.bindings[0].attributes[0] = new KGFXpipelineattribute(
+			"POSITION", KGFXjni.KGFX_DATATYPE_FLOAT2, 0
+		);
+
+		layout.descriptorSets[0] = new KGFXdescriptorsetdesc(
+			KGFXjni.KGFX_BINDPOINT_VERTEX, 0,
+			KGFXjni.KGFX_DESCRIPTOR_USAGE_UNIFORM_BUFFER, Matrix.bytesize(4, 4)
+		);
+
+		KGFXpipeline pipeline = context.createPipeline(
+			new KGFXshader[] {vshader, fshader}, layout,
+			KGFXjni.KGFX_CULLMODE_NONE, KGFXjni.KGFX_FRONTFACE_CCW,
+			KGFXjni.KGFX_FILLMODE_SOLID, KGFXjni.KGFX_TOPOLOGY_TRIANGLES
+		);
+
 		vshader.destroy();
 		fshader.destroy();
 
@@ -51,20 +77,43 @@ public class Main {
 			0.0f, 0.5f
 		};
 
-		KGFXbuffer buffer = context.createBuffer(1, 1, vertices, vertices.length * Float.BYTES);
+		KGFXbuffer buffer = context.createBuffer(
+			KGFXjni.KGFX_BUFFER_LOCATION_GPU, KGFXjni.KGFX_BUFFER_USAGE_VERTEX_BUFFER,
+			vertices, vertices.length * Float.BYTES
+		);
 		KGFXcommandlist commandList = context.createCommandList();
 
+		Matrix mvp = new Matrix(4, 4);
+
+		KGFXbuffer uniformBuffer = context.createBuffer(
+			KGFXjni.KGFX_BUFFER_LOCATION_CPU, KGFXjni.KGFX_BUFFER_USAGE_UNIFORM_BUFFER,
+			mvp.toFloatArray(), mvp.bytesize()
+		);
+
 		while (!GLFW.glfwWindowShouldClose(window)) {
+			mvp.identity();
+			mvp = mvp.rotate(0, 0, (float) GLFW.glfwGetTime());
+
+			KGFXjni.writeBufferFloats(
+				context.getHandle(), uniformBuffer.getHandle(),
+				mvp.toFloatArray()
+			);
+
 			commandList.reset();
-			commandList.bindVertexBuffer(buffer, 0);
 			commandList.bindPipeline(pipeline);
-			commandList.draw(3, 1, 0, 0);
+			commandList.bindVertexBuffer(buffer, 0);
+			commandList.bindDescriptorSetBuffer(uniformBuffer, 0);
+			commandList.draw(
+				3, 1,
+				0, 0);
 			commandList.present();
 			commandList.submit();
+
 			GLFW.glfwPollEvents();
 		}
 
 		commandList.destroy();
+		uniformBuffer.destroy();
 		buffer.destroy();
 		pipeline.destroy();
 		context.destroy();
