@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define KGFX_IMPL_VERSION KGFX_MAKE_VERSION(0, 1, 0)
+
 static s8 dummy = 0;
 
 KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* context) {
@@ -225,9 +227,9 @@ void kgfxDestroyCommandList(KGFXcontext ctx, KGFXcommandlist commandList) {
 }
 
 u32 kgfxGetImplementationVersion(void) {
-	return 0;
+	return KGFX_IMPL_VERSION;
 }
 
 KGFXbackend kgfxGetBackend(void) {
-	return KGFX_BACKEND_UNKNOWN;
+	return KGFX_BACKEND_DUMMY;
 }

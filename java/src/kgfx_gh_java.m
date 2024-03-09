@@ -1,5 +1,4 @@
 #include <jni.h>
-#include <stdio.h>
 #include <Cocoa/Cocoa.h>
 #include <QuartzCore/QuartzCore.h>
 

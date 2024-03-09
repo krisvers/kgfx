@@ -6,7 +6,7 @@ import math.*;
 
 public class Main {
 	public static void main(String[] args) {
-		System.out.println("Hello world!");
+		System.out.println("Hello world!\nKGFX implementation version (" + KGFXjni.implementationVersionString() + ") java version (" + KGFXjni.javaVersionString() + ") jni version (" + KGFXjni.jniVersionString() + ") backend: " + KGFXjni.getBackendString());
 
 		if (!GLFW.glfwInit()) {
 			System.out.println("Failed to initialize GLFW");
@@ -23,7 +23,20 @@ public class Main {
 		KGFXwindow kgfxWindow = KGFXGHjni.kgfxWindowFromGLFW(window);
 		KGFXcontext context = new KGFXcontext(0, 0, 0, kgfxWindow);
 
-		String source =
+		String vsource =
+			"#version 410\n" +
+			"layout (location = 0) in vec2 in_pos;\n" +
+			"void main() {\n" +
+				"gl_Position = vec4(in_pos, 0.0, 1.0);\n"+
+			"}\n";
+
+		String fsource =
+			"#version 410\n" +
+			"layout (location = 0) out vec4 out_color;\n" +
+			"void main() {\n" +
+				"out_color = vec4(1.0, 0.0, 0.0, 1.0);\n"+
+			"}\n";
+			/*
 			"struct vinput_t { float2 position : POSITION; };\n" +
 			"struct pinput_t { float4 position : SV_POSITION; };\n" +
 			"cbuffer ubo_t : register(b0) { float4x4 mvp; };\n" +
@@ -33,15 +46,16 @@ public class Main {
 				"return output;\n" +
 			"}\n" +
 			"float4 pmain(pinput_t input) : SV_TARGET { return float4(1, 0, 0, 1); }";
+			*/
 
 		KGFXshader vshader = context.createShader(
-			"vmain", source,
-			KGFXjni.KGFX_SHADERTYPE_VERTEX, KGFXjni.KGFX_MEDIUM_HLSL
+			"main", vsource,
+			KGFXjni.KGFX_SHADERTYPE_VERTEX, KGFXjni.KGFX_MEDIUM_GLSL
 		);
 
 		KGFXshader fshader = context.createShader(
-			"pmain", source,
-			KGFXjni.KGFX_SHADERTYPE_FRAGMENT, KGFXjni.KGFX_MEDIUM_HLSL
+			"main", fsource,
+			KGFXjni.KGFX_SHADERTYPE_FRAGMENT, KGFXjni.KGFX_MEDIUM_GLSL
 		);
 
 		KGFXpipelinelayout layout = new KGFXpipelinelayout(

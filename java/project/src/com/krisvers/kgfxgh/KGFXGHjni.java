@@ -22,7 +22,6 @@ public class KGFXGHjni {
 			}
 
 			win.window = GLFWNativeCocoa.glfwGetCocoaWindow(window);
-			System.out.println(win.window);
 			kgfxWindowSetupCocoa(win);
 		} else {
 			throw new RuntimeException("Unsupported platform");
@@ -30,5 +29,6 @@ public class KGFXGHjni {
 
 		return win;
 	}
+
 	public static native void kgfxWindowSetupCocoa(KGFXwindow window);
 }

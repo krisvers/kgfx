@@ -40,16 +40,52 @@ public class KGFXjni {
 	public static native int implementationVersionMinor();
 	public static native int implementationVersionPatch();
 
+	public static String jniVersionString() {
+		return
+			Integer.toString(jniVersionMajor()) + "." +
+			Integer.toString(jniVersionMinor()) + "." +
+			Integer.toString(jniVersionPatch());
+	}
+
+	public static String implementationVersionString() {
+		return
+			Integer.toString(implementationVersionMajor()) + "." +
+			Integer.toString(implementationVersionMinor()) + "." +
+			Integer.toString(implementationVersionPatch());
+	}
+
+	public static String javaVersionString() {
+		return
+			Integer.toString(KGFX_JAVA_VERSION_MAJOR) + "." +
+			Integer.toString(KGFX_JAVA_VERSION_MINOR) + "." +
+			Integer.toString(KGFX_JAVA_VERSION_PATCH);
+	}
+
+	public static String getBackendString() {
+		int backend = getBackend();
+		switch (backend) {
+			case KGFX_BACKEND_GENERIC: return "Generic";
+			case KGFX_BACKEND_VULKAN: return "Vulkan";
+			case KGFX_BACKEND_D3D12: return "D3D12";
+			case KGFX_BACKEND_METAL: return "Metal";
+			case KGFX_BACKEND_OPENGL: return "OpenGL";
+			case KGFX_BACKEND_DUMMY: return "Dummy";
+			default: return "Unknown";
+		}
+	}
+
 	/* enum */
 	public static final int KGFX_JAVA_VERSION_MAJOR = 0;
 	public static final int KGFX_JAVA_VERSION_MINOR = 1;
-	public static final int KGFX_JAVA_VERSION_PATCH = 2;
+	public static final int KGFX_JAVA_VERSION_PATCH = 0;
 
 	public static final int KGFX_BACKEND_UNKNOWN = 0;
 	public static final int KGFX_BACKEND_GENERIC = KGFX_BACKEND_UNKNOWN;
 	public static final int KGFX_BACKEND_VULKAN = 1;
 	public static final int KGFX_BACKEND_D3D12 = 2;
 	public static final int KGFX_BACKEND_METAL = 3;
+	public static final int KGFX_BACKEND_OPENGL = 4;
+	public static final int KGFX_BACKEND_DUMMY = 255;
 
 	public static final int KGFX_SHADERTYPE_VERTEX = 0;
 	public static final int KGFX_SHADERTYPE_FRAGMENT = 1;
@@ -138,8 +174,11 @@ public class KGFXjni {
 			System.loadLibrary("kgfx");
 			System.loadLibrary("kgfx_java");
 
+			if (implementationVersionMajor() != KGFX_JAVA_VERSION_MAJOR || implementationVersionMinor() != KGFX_JAVA_VERSION_MINOR) {
+				throw new RuntimeException("Java-KGFX version mismatch (Java library version differs from KGFX implementation) expected (" + javaVersionString() + ") got (" + implementationVersionString() + ")");
+			}
 			if (jniVersionMajor() != KGFX_JAVA_VERSION_MAJOR || jniVersionMinor() != KGFX_JAVA_VERSION_MINOR) {
-				throw new RuntimeException("JNI version mismatch (Java library version differs from JNI binding) expected (" + KGFX_JAVA_VERSION_MAJOR + "." + KGFX_JAVA_VERSION_MINOR + "." + KGFX_JAVA_VERSION_PATCH + ") got (" + jniVersionMajor() + "." + jniVersionMinor() + "." + jniVersionPatch() + ")");
+				throw new RuntimeException("Java-JNI version mismatch (Java library version differs from JNI binding) expected (" + javaVersionString() + ") got (" + jniVersionString() + ")");
 			}
 			if (jniVersionPatch() != KGFX_JAVA_VERSION_PATCH) {
 				System.out.println("Warning: JNI patch version mismatch (Java library version differs from JNI binding) expected (" + KGFX_JAVA_VERSION_MAJOR + "." + KGFX_JAVA_VERSION_MINOR + "." + KGFX_JAVA_VERSION_PATCH + ") got (" + jniVersionMajor() + "." + jniVersionMinor() + "." + jniVersionPatch() + ")");
