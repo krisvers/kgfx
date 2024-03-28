@@ -1,51 +1,72 @@
-FLAGS = -Ilib/include -Iinclude -Wno-switch -Wno-deprecated-declarations -Wno-unused-function
+CXX = clang++
+CC = clang
 
-MAC_LIBS = -Llib/mac -lglfw3 -framework IOKit -framework Cocoa -framework QuartzCore -lMoltenVK
-LINUX_LIBS = -lglfw -lvulkan -lassimp
+INCLUDE = -Ikgfx/include -Ikgfx/vendor/include
 
-linux-vulkan-examples: linux-vulkan-static
-	clang -c src/main.c $(shell find src -type f -name "example*.c") src/kgfx_gh/kgfx_gh_xlib.c $(FLAGS) $(EXTRA)
-	mv *.o obj/
-	clang++ obj/*.o $(LINUX_LIBS) $(EXTRA) -Lbuild -l:libkgfx.a -lm -o kgfx-examples
+CXXFLAGS = -std=c++14 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-variable -Wno-unused-private-field -Wno-unused-function $(INCLUDE)
+CCFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-variable -Wno-unused-private-field -Wno-unused-function $(INCLUDE)
+MMFLAGS = -fobjc-arc
 
-linux-vulkan-static:
-	clang++ -static -c src/kgfx/kgfx_vulkan.cpp $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o obj/kgfx_vulkan.o
-	ar rcs build/libkgfx.a obj/kgfx_vulkan.o
+KGFX_SRC_DIR = kgfx/src/kgfx
+KGFX_SRC_METAL = $(KGFX_SRC_DIR)/kgfx_metal.mm
+KGFX_SRC_D3D12 = $(KGFX_SRC_DIR)/kgfx_d3d12.cpp
+KGFX_SRC_VULKAN = $(KGFX_SRC_DIR)/kgfx_vulkan.cpp
+KGFX_SRC_DUMMY = $(KGFX_SRC_DIR)/kgfx_dummy.c
 
-linux-vulkan-dynamic:
-	clang++ -shared -fPIC src/kgfx/kgfx_vulkan.cpp $(FLAGS) $(LINUX_LIBS) $(EXTRA) -o build/libkgfx.so
+OBJ_DIR = obj
+BUILD_DIR = build
 
-linux-dummy-dynamic:
-	clang -shared -fPIC src/kgfx/kgfx_dummy.c -o build/libkgfx.so $(FLAGS) -Wno-switch
+KGFX_OBJ_METAL = $(OBJ_DIR)/$(subst .mm,.o,$(KGFX_SRC_METAL))
+KGFX_OBJ_D3D12 = $(OBJ_DIR)/$(subst .cpp,.o,$(KGFX_SRC_D3D12))
+KGFX_OBJ_VULKAN = $(OBJ_DIR)/$(subst .cpp,.o,$(KGFX_SRC_VULKAN))
+KGFX_OBJ_DUMMY = $(OBJ_DIR)/$(subst .cpp,.o,$(KGFX_SRC_DUMMY))
 
-mac-vulkan:
-	clang -std=c99 -c src/main.c $(shell find src -type f -name "example*.c") $(FLAGS)
-	mv *.o obj/
-	clang -c src/kgfx_gh/kgfx_gh_cocoa.m -o obj/kgfx_gh_cocoa.o $(FLAGS)
-	clang++ -std=c++14 -c src/kgfx/kgfx_vulkan.cpp -o obj/kgfx_vulkan.o $(FLAGS) -Wno-switch
-	# clang++ obj/*.o -o kgfx -rpath lib/mac $(MAC_LIBS)
-
-mac-vulkan-dynamic:
-	clang++ -dynamic -shared -fPIC -std=c++14 src/kgfx/kgfx_vulkan.cpp -o build/libkgfx.dylib $(FLAGS) $(MAC_LIBS) -Wno-switch
-
-mac-dummy-dynamic:
-	clang -dynamic -shared -fPIC src/kgfx/kgfx_dummy.c -o build/libkgfx.dylib $(FLAGS) -Wno-switch
-
-mac-opengl-dynamic:
-	clang++ -dynamic -shared -fPIC src/kgfx/kgfx_opengl.cpp lib/src/glad.c -o build/libkgfx.dylib $(FLAGS) -Llib/mac -framework OpenGL
-
-mac-kgfx_gh-dynamic:
-	clang -undefined dynamic_lookup -shared -fPIC src/kgfx_gh/kgfx_gh_cocoa.m -o build/libkgfx_gh.dylib $(FLAGS) -Llib/mac -framework IOKit -framework Cocoa -framework QuartzCore
-
-mac-metal:
-	clang -std=c99 -c src/main.c -o obj/main.o $(FLAGS)
-	clang -c src/kgfx_gh_cocoa.m -o obj/kgfx_gh_cocoa.o $(FLAGS)
-	clang++ -std=c++14 -c src/kgfx/kgfx_metal.mm -o obj/kgfx_metal.o $(FLAGS)
-	clang++ obj/main.o obj/kgfx_gh_cocoa.o obj/kgfx_metal.o -o kgfx -Llib/mac -framework IOKit -framework Cocoa -framework QuartzCore -framework Metal -lglfw3
-
-pylaunch:
-	pylauncher ./kgfx triangle $(PWD)
+.PHONY: build-metal-dylib obj-metal-dylib link-metal-dylib clean make-vars
 
 clean:
-	rm -rf build obj
-	mkdir build obj
+	rm -rf $(OBJ_DIR) $(BUILD_DIR)
+
+make-vars:
+	@echo "CXX: " $(CXX)
+	@echo "CC: " $(CC)
+
+	@echo "CXXFLAGS: " $(CXXFLAGS)
+	@echo "CCFLAGS: " $(CCFLAGS)
+	@echo "MMFLAGS: " $(MMFLAGS)
+
+	@echo "KGFX_SRC_METAL: " $(KGFX_SRC_METAL)
+	@echo "KGFX_SRC_D3D12: " $(KGFX_SRC_D3D12)
+	@echo "KGFX_SRC_VULKAN: " $(KGFX_SRC_VULKAN)
+	@echo "KGFX_SRC_DUMMY: " $(KGFX_SRC_DUMMY)
+
+	@echo "OBJ_DIR: " $(OBJ_DIR)
+	@echo "BUILD_DIR: " $(BUILD_DIR)
+
+	@echo "KGFX_OBJ_METAL: " $(KGFX_OBJ_METAL)
+	@echo "KGFX_OBJ_D3D12: " $(KGFX_OBJ_D3D12)
+	@echo "KGFX_OBJ_VULKAN: " $(KGFX_OBJ_VULKAN)
+	@echo "KGFX_OBJ_DUMMY: " $(KGFX_OBJ_DUMMY)
+
+build-metal-dylib: obj-metal-dylib link-metal-dylib
+
+obj-metal-dylib: $(KGFX_OBJ_METAL)
+
+link-metal-dylib:
+	mkdir -p $(BUILD_DIR)
+	$(CXX) -dynamiclib -o $(BUILD_DIR)/kgfx_metal.dylib $(KGFX_OBJ_METAL) -lobjc -framework Metal -framework Cocoa -framework QuartzCore
+
+$(OBJ_DIR)/%.o: %.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.mm
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(MMFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.c
+	mkdir -p $(dir $@)
+	$(CC) $(CXXFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.m
+	mkdir -p $(dir $@)
+	$(CC) $(CCFLAGS) $(MMFLAGS) -c $< -o $@
