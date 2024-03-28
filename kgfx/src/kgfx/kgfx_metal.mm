@@ -58,6 +58,7 @@ static void debugFunc(const char* format, Types... types) {
 struct MetalRenderer {
 	NSWindow* nsWindow;
 
+	MetalRenderer() = default;
 	int init(NSWindow* w);
 };
 
@@ -79,7 +80,7 @@ KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* contex
 			return KGFX_VERSION_NOT_SUPPORTED;
 		}
 
-		KGFXcontext ctx = new KGFXcontext_t();
+		KGFXcontext_t* ctx = new KGFXcontext_t;
 		// convert void* window.window to NSWindow*
 		NSWindow* w = (__bridge NSWindow*) window.window;
 		if (ctx->renderer.init(w) != 0) {
@@ -221,4 +222,9 @@ u32 kgfxGetBackends(KGFXbackend* pBackends, u32 count) {
 
 	pBackends[0] = KGFX_IMPL_BACKEND;
 	return 1;
+}
+
+int MetalRenderer::init(NSWindow* w) {
+	nsWindow = w; 
+	return 0;
 }

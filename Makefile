@@ -39,11 +39,15 @@ DYNAMIC_LINK_FLAGS_VULKAN = -lvulkan
 
 KGFXGH_LINK_FLAGS = -lglfw3
 
+KGFXGH_SRC_DIR = kgfx/src/kgfx_gh
+KGFXGH_OBJ = 
+
 ifeq ($(OS),Windows_NT)
 	STATIC_LIB_EXT = lib
 	DYNAMIC_LIB_EXT = dll
 
 	KGFXGH_LINK_FLAGS = -lglfw3
+	KGFXGH_OBJ = $(OBJ_DIR)/$(KGFXGH_SRC_DIR)/kgfx_gh_win32.o
 else ifeq ($(OS),Darwin)
 	STATIC_LIB_EXT = a
 	DYNAMIC_LIB_EXT = dylib
@@ -54,6 +58,7 @@ else ifeq ($(OS),Darwin)
 	DYNAMIC_LINK_FLAG = -dynamic
 
 	KGFXGH_LINK_FLAGS = -lglfw3
+	KGFXGH_OBJ = $(OBJ_DIR)/$(KGFXGH_SRC_DIR)/kgfx_gh_cocoa.o
 else
 	STATIC_LIB_EXT = a
 	DYNAMIC_LIB_EXT = so
@@ -64,10 +69,11 @@ else
 	DYNAMIC_LINK_FLAG = -shared -fPIC
 
 	KGFXGH_LINK_FLAGS = -lglfw
+	KGFXGH_OBJ = $(OBJ_DIR)/$(KGFXGH_SRC_DIR)/kgfx_gh_xlib.o
 endif
 
 
-.PHONY: obj-metal build-metal-static link-metal-static build-metal-dylib link-metal-dylib obj-dummy build-dummy-static link-dummy-static build-dummy-dynamic link-dummy-dynamic obj-vulkan build-vulkan-static link-vulkan-static build-vulkan-dynamic link-vulkan-dynamic clean make-vars
+.PHONY: clean-obj clean-build obj-gh build-gh-static link-gh-static build-gh-dynamic link-gh-dynamic obj-metal build-metal-static link-metal-static build-metal-dylib link-metal-dylib obj-dummy build-dummy-static link-dummy-static build-dummy-dynamic link-dummy-dynamic obj-vulkan build-vulkan-static link-vulkan-static build-vulkan-dynamic link-vulkan-dynamic clean make-vars
 
 make-vars:
 	@echo "Makefile variables debug:"
@@ -91,15 +97,36 @@ make-vars:
 	@echo "KGFX_OBJ_VULKAN: " $(KGFX_OBJ_VULKAN)
 	@echo "KGFX_OBJ_DUMMY: " $(KGFX_OBJ_DUMMY)
 
-clean:
-	rm -rf $(OBJ_DIR) $(BUILD_DIR)
+clean: clean-obj clean-build
+
+clean-obj:
+	rm -rf $(OBJ_DIR)
+
+clean-build:
+	rm -rf $(BUILD_DIR)
+
+obj-gh: $(KGFXGH_OBJ)
+
+build-gh-static: obj-gh link-gh-static
+
+link-gh-static:
+	@echo "| Linking static lib: libkgfx_gh.$(STATIC_LIB_EXT)"
+	@mkdir -p $(BUILD_DIR)
+	ar rcs $(BUILD_DIR)/libkgfx_gh.$(STATIC_LIB_EXT) $(KGFXGH_OBJ)
+
+build-gh-dynamic: obj-gh link-gh-dynamic
+
+link-gh-dynamic:
+	@echo "| Linking libkgfx_gh dynamic lib:.$(DYNAMIC_LIB_EXT)"
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(DYNAMIC_LINK_FLAG) -o $(BUILD_DIR)/libkgfx_gh.$(DYNAMIC_LIB_EXT) $(KGFXGH_OBJ) $(KGFXGH_LINK_FLAGS)
 
 build-metal-static: obj-metal link-metal-static
 
 link-metal-static:
-	@echo "| Linking libkgfx_metal.a"
+	@echo "| Linking static lib: libkgfx.a"
 	@mkdir -p $(BUILD_DIR)
-	ar rcs $(BUILD_DIR)/libkgfx_metal.a $(KGFX_OBJ_METAL)
+	ar rcs $(BUILD_DIR)/libkgfx.a $(KGFX_OBJ_METAL)
 
 build-metal-dylib: obj-metal link-metal-dylib
 
@@ -108,39 +135,39 @@ obj-metal: $(KGFX_OBJ_METAL)
 link-metal-dylib:
 	@echo "| Linking libkgfx_metal.dylib"
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) -dynamiclib -o $(BUILD_DIR)/libkgfx_metal.dylib $(KGFX_OBJ_METAL) -lobjc -framework Metal -framework Cocoa -framework QuartzCore
+	$(CXX) -dynamiclib -o $(BUILD_DIR)/libkgfx.dylib $(KGFX_OBJ_METAL) -lobjc -framework Metal -framework Cocoa -framework QuartzCore
 
 obj-dummy: $(KGFX_OBJ_DUMMY)
 
 build-dummy-static: obj-dummy link-dummy-static
 
 link-dummy-static:
-	@echo "| Linking libkgfx_dummy.a"
+	@echo "| Linking static lib: libkgfx.a"
 	@mkdir -p $(BUILD_DIR)
-	ar rcs $(BUILD_DIR)/libkgfx_dummy.a $(KGFX_OBJ_DUMMY)
+	ar rcs $(BUILD_DIR)/libkgfx.a $(KGFX_OBJ_DUMMY)
 
 build-dummy-dynamic: obj-dummy link-dummy-dynamic
 
 link-dummy-dynamic:
-	@echo "| Linking libkgfx_dummy.dylib"
+	@echo "| Linking dynamic lib: libkgfx.dylib"
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(DYNAMIC_LINK_FLAG) -o $(BUILD_DIR)/libkgfx_dummy.dylib $(KGFX_OBJ_DUMMY)
+	$(CC) $(DYNAMIC_LINK_FLAG) -o $(BUILD_DIR)/libkgfx.dylib $(KGFX_OBJ_DUMMY)
 
 obj-vulkan: $(KGFX_OBJ_VULKAN)
 
 build-vulkan-static: obj-vulkan link-vulkan-static
 
 link-vulkan-static:
-	@echo "| Linking libkgfx_vulkan.$(STATIC_LIB_EXT)"
+	@echo "| Linking static lib: libkgfx.$(STATIC_LIB_EXT)"
 	@mkdir -p $(BUILD_DIR)
-	ar rcs $(BUILD_DIR)/libkgfx_vulkan.$(STATIC_LIB_EXT) $(KGFX_OBJ_VULKAN)
+	ar rcs $(BUILD_DIR)/libkgfx.$(STATIC_LIB_EXT) $(KGFX_OBJ_VULKAN)
 	
 build-vulkan-dynamic: obj-vulkan link-vulkan-dynamic	
 
 link-vulkan-dynamic:
-	@echo "| Linking libkgfx_vulkan.$(DYNAMIC_LIB_EXT)"
+	@echo "| Linking dynamic lib: libkgfx.$(DYNAMIC_LIB_EXT)"
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(DYNAMIC_LINK_FLAG) -o $(BUILD_DIR)/libkgfx_vulkan.$(DYNAMIC_LIB_EXT) $(KGFX_OBJ_VULKAN) $(DYNAMIC_LINK_FLAGS_VULKAN)
+	$(CXX) $(DYNAMIC_LINK_FLAG) -o $(BUILD_DIR)/libkgfx.$(DYNAMIC_LIB_EXT) $(KGFX_OBJ_VULKAN) $(DYNAMIC_LINK_FLAGS_VULKAN)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@echo "|-> Compiling $< to $@"

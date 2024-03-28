@@ -8,7 +8,7 @@
 KGFXwindow kgfxWindowFromGLFW(GLFWwindow* window) {
 	@autoreleasepool {
 		KGFXwindow win;
-		win.window = glfwGetCocoaWindow(window);
+		win.window = (__bridge void*) glfwGetCocoaWindow(window);
 		return win;
 	}
 }
