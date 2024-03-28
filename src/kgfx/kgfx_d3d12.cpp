@@ -480,12 +480,16 @@ KGFXresult kgfxCreateContext(u32 version, KGFXwindow window, KGFXcontext* contex
 		return KGFX_NULL_OUTPUT_ARGUMENT;
 	}
 
-	if (KGFX_MAJOR(version) != KGFX_MAJOR(KGFX_IMPL_VER)) {
-		return KGFX_VERSION_MAJOR_MISMATCH;
+	if (KGFX_MAJOR(version) != KGFX_ANY_MAJOR) {
+		if (KGFX_MAJOR(version) != KGFX_MAJOR(KGFX_IMPL_VER)) {
+			return KGFX_VERSION_MAJOR_MISMATCH;
+		}
 	}
-
-	if (KGFX_MINOR(version) > KGFX_MINOR(KGFX_IMPL_VER)) {
-		return KGFX_VERSION_NOT_SUPPORTED;
+	
+	if (KGFX_MINOR(version) != KGFX_ANY_MINOR) {
+		if (KGFX_MINOR(version) > KGFX_MINOR(KGFX_IMPL_VER)) {
+			return KGFX_VERSION_NOT_SUPPORTED;
+		}
 	}
 
 	KGFXcontext ctx = new KGFXcontext_t{};
@@ -1572,6 +1576,11 @@ KGFXshader D3D12::createShader(KGFXshaderdesc shaderDesc) {
 
 	if (shaderDesc.size == 0) {
 		DEBUG_OUT("Invalid shader size");
+		return nullptr;
+	}
+
+	if (shaderDesc.medium != KGFX_MEDIUM_HLSL) {
+		DEBUG_OUT("Implementation only supports HLSL");
 		return nullptr;
 	}
 

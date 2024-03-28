@@ -23,6 +23,7 @@ public class Main {
 		KGFXwindow kgfxWindow = KGFXGHjni.kgfxWindowFromGLFW(window);
 		KGFXcontext context = new KGFXcontext(0, 0, 0, kgfxWindow);
 
+		/*
 		String vsource =
 			"#version 410\n" +
 			"layout (location = 0) in vec2 in_pos;\n" +
@@ -36,26 +37,25 @@ public class Main {
 			"void main() {\n" +
 				"out_color = vec4(1.0, 0.0, 0.0, 1.0);\n"+
 			"}\n";
-			/*
+		*/
+		String hlsl =
 			"struct vinput_t { float2 position : POSITION; };\n" +
 			"struct pinput_t { float4 position : SV_POSITION; };\n" +
-			"cbuffer ubo_t : register(b0) { float4x4 mvp; };\n" +
 			"pinput_t vmain(vinput_t input) {\n" +
 				"pinput_t output;\n" +
-				"output.position = mul(float4(input.position, 0.0f, 1.0f), mvp);\n" +
+				"output.position = float4(input.position, 0.0f, 1.0f);\n" +
 				"return output;\n" +
 			"}\n" +
 			"float4 pmain(pinput_t input) : SV_TARGET { return float4(1, 0, 0, 1); }";
-			*/
 
 		KGFXshader vshader = context.createShader(
-			"main", vsource,
-			KGFXjni.KGFX_SHADERTYPE_VERTEX, KGFXjni.KGFX_MEDIUM_GLSL
+			"vmain", hlsl,
+			KGFXjni.KGFX_SHADERTYPE_VERTEX, KGFXjni.KGFX_MEDIUM_HLSL
 		);
 
 		KGFXshader fshader = context.createShader(
-			"main", fsource,
-			KGFXjni.KGFX_SHADERTYPE_FRAGMENT, KGFXjni.KGFX_MEDIUM_GLSL
+			"pmain", hlsl,
+			KGFXjni.KGFX_SHADERTYPE_FRAGMENT, KGFXjni.KGFX_MEDIUM_HLSL
 		);
 
 		KGFXpipelinelayout layout = new KGFXpipelinelayout(
