@@ -1,5 +1,15 @@
-.vs
 out
 build
 xcode
 .DS_Store
+.vscode
+.vs
+.sln
+.vcxproj
+.vcxproj.filters
+.vcxproj.user
+x86
+x64
+.exe
+.obj
+.o

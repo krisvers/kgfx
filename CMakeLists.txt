@@ -12,7 +12,13 @@ endif()
 project("prism")
 
 find_package(Vulkan REQUIRED)
-find_package(glfw3 REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+
+get_cmake_property(_variableNames VARIABLES)
+list (SORT _variableNames)
+foreach (_variableName ${_variableNames})
+    message(STATUS "${_variableName}=${${_variableName}}")
+endforeach()
 
 # Add source to this project's executable.
 add_executable(prism "main.c" "prism.h" "prism.c" "prism.cpp" "prism.m" "common.h")
@@ -21,12 +27,17 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 target_link_directories(prism PRIVATE ${Vulkan_LIBRARY})
 target_link_libraries(prism PRIVATE ${Vulkan_LIBRARIES})
 
-target_link_libraries(prism PRIVATE "-framework Metal")
-target_link_libraries(prism PRIVATE "-framework Cocoa")
-target_link_libraries(prism PRIVATE "-framework QuartzCore")
-target_link_libraries(prism PRIVATE glfw)
+message(STATUS ${glfw3_INCLUDE_DIR} ${glfw3_DIR})
+target_include_directories(prism PUBLIC ${glfw3_INCLUDE_DIRS})
+target_link_libraries(prism PRIVATE ${GLFW_LIBRARIES})
 
-# target_link_libraries(prism PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib)
+if (WIN32)
+    target_link_libraries(prism PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib)
+elseif (APPLE)
+    target_link_libraries(prism PRIVATE "-framework Metal")
+    target_link_libraries(prism PRIVATE "-framework Cocoa")
+    target_link_libraries(prism PRIVATE "-framework QuartzCore")
+endif()
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET prism PROPERTY CXX_STANDARD 20)

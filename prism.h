@@ -1,9 +1,9 @@
 #ifndef PRISM_H
 #define PRISM_H
 
-#if defined(PRISM_D3D12) && !defined(WIN32)
+#if defined(PRISM_D3D12) && !(defined(_WIN32) || defined(_WIN64) || defined(__WIN32__))
 #error "D3D12 only supported on windows platforms"
-#endif /* #if defined(PRISM_D3D12) && !defined(WIN32) */
+#endif /* #if defined(PRISM_D3D12) && !(defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)) */
 
 #if defined(PRISM_METAL) && !defined(__APPLE__)
 #error "Metal only supported on Apple platforms"
@@ -179,6 +179,7 @@ typedef enum PrismShaderStage {
     
     PRISM_SHADER_STAGE_GRAPHICS_MASK = PRISM_SHADER_STAGE_VERTEX | PRISM_SHADER_STAGE_TESS_CONTROL | PRISM_SHADER_STAGE_TESS_EVAL | PRISM_SHADER_STAGE_GEOMETRY | PRISM_SHADER_STAGE_FRAGMENT,
 } PrismShaderStage;
+typedef uint32_t PrismShaderStageBits;
 
 typedef enum PrismCullMode {
     PRISM_CULL_MODE_NONE = 0,
@@ -365,10 +366,13 @@ typedef struct PrismRenderTargetDesc {
 typedef struct PrismUniformDesc {
     PrismUniformBindPointType bindPointType;
     uint32_t bindPoint;
+    PrismShaderStageBits stages;
+    PrismResourceType resourceType;
 } PrismUniformDesc;
 
 typedef struct PrismUniformSignatureDesc {
-    
+    uint32_t uniformCount;
+    PrismUniformDesc* pUniforms;
 } PrismUniformSignatureDesc;
 
 typedef struct PrismGraphicsPipelineDesc {
@@ -654,6 +658,11 @@ typedef Prism_Vulkan_ExtensionRequest_t Prism_Vulkan_LayerRequest_t;
 typedef PRISM_LIST(Prism_Vulkan_LayerRequest_t) Prism_Vulkan_LayerRequestList_t;
 typedef PRISM_LIST(const char*) Prism_Vulkan_ActualLayerList_t;
 
+#define PRISM_ADD_EXTENSION(list_, index_, name_, necessary_) \
+    memcpy((void*) list_.data[index_].name, name_, strlen(name_) + 1); \
+    list_.data[index_++].isNecessary = necessary_;
+#define PRISM_ADD_LAYER(list_, index_, name_, necessary_) PRISM_ADD_EXTENSION(list_, index_, name_, necessary_)
+
 PrismResult prism_vulkan_getExtensions(VkPhysicalDevice vkPhysicalDevice, Prism_Vulkan_ExtensionRequestList_t requestedExtensionList, Prism_Vulkan_ActualExtensionList_t* pList) {
     PRISM_LIST(VkExtensionProperties) vkExtensionProperties = { NULL, 0 };
     Prism_Vulkan_ActualExtensionList_t actualExtensions = { NULL, 0 };
@@ -892,37 +901,28 @@ PrismResult prismCreateInstance_vulkan(PrismInstanceCreateFlagBits flags, PrismI
     
     /* surface extensions */
     if (flags & PRISM_INSTANCE_CREATE_FLAG_GRAPHICAL) {
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_SURFACE_EXTENSION_NAME, strlen(VK_KHR_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_SURFACE_EXTENSION_NAME, PRISM_TRUE);
         
 #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_WIN32_SURFACE_EXTENSION_NAME, strlen(VK_KHR_WIN32_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_WIN32_SURFACE_EXTENSION_NAME, PRISM_TRUE);
 #elif defined(__linux__) || defined(__gnu_linux__) || defined(linux) || defined(__linux)
         /* X11/Xlib, Xcb, Wayland */
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_XLIB_SURFACE_EXTENSION_NAME, strlen(VK_KHR_XLIB_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_FALSE;
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_XCB_SURFACE_EXTENSION_NAME, strlen(VK_KHR_XCB_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_FALSE;
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, strlen(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_FALSE;
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_XLIB_SURFACE_EXTENSION_NAME, PRISM_FALSE);
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_XCB_SURFACE_EXTENSION_NAME, PRISM_FALSE);
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, PRISM_FALSE);
 #elif defined(__APPLE__)
         /* VK_MVK_macos_surface and VK_EXT_metal_surface */
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_MVK_MACOS_SURFACE_EXTENSION_NAME, strlen(VK_MVK_MACOS_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_EXT_METAL_SURFACE_EXTENSION_NAME, strlen(VK_EXT_METAL_SURFACE_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_MVK_MACOS_SURFACE_EXTENSION_NAME, PRISM_TRUE);
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_METAL_SURFACE_EXTENSION_NAME, PRISM_TRUE);
 #endif /* #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__) */
     }
     
     if (flags & PRISM_INSTANCE_CREATE_FLAG_DEBUG) {
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_EXT_DEBUG_UTILS_EXTENSION_NAME, strlen(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_EXT_DEBUG_UTILS_EXTENSION_NAME, PRISM_TRUE);
     }
     
 #ifdef __APPLE__
-    memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, strlen(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) + 1);
-    requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+    PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, PRISM_TRUE);
 #endif /* #ifdef __APPLE__ */
     
     Prism_Vulkan_ActualExtensionList_t actualExtensions = { NULL, 0 };
@@ -947,8 +947,7 @@ PrismResult prismCreateInstance_vulkan(PrismInstanceCreateFlagBits flags, PrismI
     
     uint32_t requestedLayerIndex = 0;
     if (flags & PRISM_INSTANCE_CREATE_FLAG_VALIDATION) {
-        memcpy((void*) requestedLayerList.data[requestedLayerIndex].name, "VK_LAYER_KHRONOS_validation", strlen("VK_LAYER_KHRONOS_validation") + 1);
-        requestedLayerList.data[requestedLayerIndex++].isNecessary = PRISM_TRUE;
+        PRISM_ADD_LAYER(requestedLayerList, requestedLayerIndex, "VK_LAYER_KHRONOS_validation", PRISM_TRUE);
     }
     
     Prism_Vulkan_ActualLayerList_t actualLayers = { NULL, 0 };
@@ -1299,16 +1298,13 @@ PrismResult prismCreateDevice_vulkan(PrismInstance instance, uint32_t adapterID,
     
     uint32_t requestedExtensionIndex = 0;
 #ifdef __APPLE__
-    memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, "VK_KHR_portability_subset", strlen("VK_KHR_portability_subset") + 1);
-    requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+    PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, "VK_KHR_portability_subset", PRISM_TRUE);
 #endif /* #ifdef __APPLE__ */
-    
-    memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, "VK_KHR_push_descriptor", strlen("VK_KHR_push_descriptor") + 1);
-    requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+
+    PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, "VK_KHR_push_descriptor", PRISM_TRUE);
     
     if (vulkanInstance->flags & PRISM_INSTANCE_CREATE_FLAG_GRAPHICAL) {
-        memcpy((void*) requestedExtensionList.data[requestedExtensionIndex].name, VK_KHR_SWAPCHAIN_EXTENSION_NAME, strlen(VK_KHR_SWAPCHAIN_EXTENSION_NAME) + 1);
-        requestedExtensionList.data[requestedExtensionIndex++].isNecessary = PRISM_TRUE;
+        PRISM_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_SWAPCHAIN_EXTENSION_NAME, PRISM_TRUE);
     }
     
     Prism_Vulkan_ActualExtensionList_t actualExtensions = { NULL, 0 };
@@ -1356,7 +1352,7 @@ PrismResult prismCreateDevice_vulkan(PrismInstance instance, uint32_t adapterID,
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
         nameInfo.objectType = VK_OBJECT_TYPE_DEVICE;
-        nameInfo.objectHandle = device->vk.device;
+        nameInfo.objectHandle = (uint64_t) device->vk.device;
         nameInfo.pObjectName = "Prism Logical Device";
         vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(device->vk.device, &nameInfo);
     }
@@ -1417,7 +1413,7 @@ PrismResult prismCreateCommandPool_vulkan(PrismDevice device, uint32_t maxComman
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
         nameInfo.objectType = VK_OBJECT_TYPE_COMMAND_POOL;
-        nameInfo.objectHandle = vkCommandPool;
+        nameInfo.objectHandle = (uint64_t) vkCommandPool;
         nameInfo.pObjectName = "Prism Command Pool";
         vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
     }
@@ -1475,7 +1471,7 @@ PrismResult prismCreateCommandList_vulkan(PrismCommandPool commandPool, PrismCom
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
         nameInfo.objectType = VK_OBJECT_TYPE_COMMAND_BUFFER;
-        nameInfo.objectHandle = vkCommandBuffer;
+        nameInfo.objectHandle = (uint64_t) vkCommandBuffer;
         nameInfo.pObjectName = "Prism Command List";
         vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
     }
@@ -1503,12 +1499,117 @@ void prismDestroyCommandList_vulkan(PrismCommandList commandList) {
     free(commandList);
 }
 
-#ifdef WIN32
+#if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)
 PrismResult prismCreateSwapchainWin32_vulkan(PrismDevice device, void* hwnd, void* hinstance, const PrismSwapchainDesc* pSwapchainDesc, PrismSwapchain* pSwapchain) {
-    /* TODO: implement win32 swapchain */
-    return PRISM_RESULT_ERROR_UNIMPLEMENTED;
+    if (pSwapchainDesc->format == PRISM_FORMAT_UNKNOWN) {
+        return PRISM_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    PrismDevice_Vulkan_t* vulkanDevice = (PrismDevice_Vulkan_t*) device;
+    PrismInstance_Vulkan_t* vulkanInstance = (PrismInstance_Vulkan_t*) vulkanDevice->obj.instance;
+
+    Prism_Vulkan_Surface_t* surface = NULL;
+    uint32_t surfaceIndex = 0;
+    for (uint32_t i = 0; i < vulkanInstance->surfaces.length; ++i) {
+        if (hwnd == vulkanInstance->surfaces.data[i].window.win32.hwnd && hinstance == vulkanInstance->surfaces.data[i].window.win32.hinstance) {
+            surface = &vulkanInstance->surfaces.data[i];
+            surfaceIndex = i;
+            break;
+        }
+    }
+
+    if (surface == NULL) {
+        VkWin32SurfaceCreateInfoKHR createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        createInfo.pNext = NULL;
+        createInfo.flags = 0;
+        createInfo.hwnd = hwnd;
+        createInfo.hinstance = hinstance;
+
+        VkSurfaceKHR vkSurface;
+        if (vkCreateWin32SurfaceKHR(vulkanInstance->vk.instance, &createInfo, NULL, &vkSurface) != VK_SUCCESS) {
+            return PRISM_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+
+        Prism_Vulkan_Surface_t surf;
+        surf.vk.surface = vkSurface;
+        surf.type = PRISM_INTERNAL_VULKAN_WINDOW_TYPE_WIN32;
+        surf.window.win32.hwnd = hwnd;
+        surf.window.win32.hinstance = hinstance;
+        surf.referenceCount = 0;
+
+        surfaceIndex = vulkanInstance->surfaces.length;
+        if (vulkanInstance->surfaces.data == NULL) {
+            PRISM_LIST_INIT(vulkanInstance->surfaces, 1, Prism_Vulkan_Surface_t);
+            memcpy(vulkanInstance->surfaces.data, &surf, sizeof(surf));
+        } else {
+            PRISM_LIST_APPEND(vulkanInstance->surfaces, surf, Prism_Vulkan_Surface_t);
+        }
+        surface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
 }
-#endif /* #ifdef WIN32 */
+
+    VkSwapchainCreateInfoKHR createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.pNext = NULL;
+    createInfo.flags = 0;
+    createInfo.surface = surface->vk.surface;
+    createInfo.minImageCount = pSwapchainDesc->imageCount;
+    createInfo.imageFormat = prism_vulkan_vkFormat(pSwapchainDesc->format);
+    createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    createInfo.imageExtent = (VkExtent2D){ pSwapchainDesc->width, pSwapchainDesc->height };
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.queueFamilyIndexCount = 0;
+    createInfo.pQueueFamilyIndices = NULL;
+    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = prism_vulkan_vkPresentMode(pSwapchainDesc->presentMode);
+    if (createInfo.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        PRISM_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, Prism_Vulkan_Surface_t);
+        return PRISM_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    createInfo.clipped = VK_TRUE;
+    createInfo.oldSwapchain = NULL;
+
+    VkSwapchainKHR vkSwapchain;
+    if (vkCreateSwapchainKHR(vulkanDevice->vk.device, &createInfo, NULL, &vkSwapchain) != VK_SUCCESS) {
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        PRISM_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, Prism_Vulkan_Surface_t);
+        return PRISM_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT != NULL) {
+        VkDebugUtilsObjectNameInfoEXT nameInfo;
+        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        nameInfo.pNext = NULL;
+        nameInfo.objectType = VK_OBJECT_TYPE_SWAPCHAIN_KHR;
+        nameInfo.objectHandle = (uint64_t) vkSwapchain;
+        nameInfo.pObjectName = "Prism Win32 Swapchain";
+        vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+    }
+
+    PrismSwapchain_Vulkan_t* vulkanSwapchain = (PrismSwapchain_Vulkan_t*) malloc(sizeof(PrismSwapchain_Vulkan_t));
+    if (vulkanSwapchain == NULL) {
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        PRISM_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, Prism_Vulkan_Surface_t);
+        return PRISM_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    vulkanSwapchain->obj.api = PRISM_INSTANCE_API_VULKAN;
+    vulkanSwapchain->obj.instance = device->instance;
+    vulkanSwapchain->device = device;
+    vulkanSwapchain->vk.surface = surface->vk.surface;
+    vulkanSwapchain->vk.swapchain = vkSwapchain;
+
+    *pSwapchain = &vulkanSwapchain->obj;
+    ++surface->referenceCount;
+    return PRISM_RESULT_SUCCESS;
+}
+#endif /* #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__) */
 
 #if defined(__linux__) || defined(__gnu_linux__)
 PrismResult prismCreateSwapchainXlib_vulkan(PrismDevice device, void* display, unsigned long window, const PrismSwapchainDesc* pSwapchainDesc, PrismSwapchain* pSwapchain) {
@@ -1616,7 +1717,7 @@ PrismResult prismCreateSwapchainCocoa_vulkan(PrismDevice device, void* nsWindow,
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
         nameInfo.objectType = VK_OBJECT_TYPE_SWAPCHAIN_KHR;
-        nameInfo.objectHandle = vkSwapchain;
+        nameInfo.objectHandle = (uint64_t) vkSwapchain;
         nameInfo.pObjectName = "Prism Cocoa Swapchain";
         vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
     }
@@ -1931,7 +2032,7 @@ void prismDestroyDevice_d3d12(PrismDevice device) {
 
 PrismResult prismCreateSwapchainWin32_d3d12(PrismDevice device, void* hwnd, void* hinstance, const PrismSwapchainDesc* pSwapchainDesc, PrismSwapchain* pSwapchain) {
     /* TODO: implement D3D12 windows swapchain */
-    return PRISM_RESULT_ERROR_UNIMPLMENTED;
+    return PRISM_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 void prismDestroySwapchain_d3d12(PrismSwapchain swapchain) {
@@ -2168,7 +2269,7 @@ PrismResult prismDebugRegisterCallback(PrismInstance instance, PrismDebugCallbac
 #endif /* PRISM_VULKAN */
 #ifdef PRISM_D3D12
         case PRISM_INSTANCE_API_D3D12:
-            return prismDebugRegisterCallback_d3d12(instance, callback);
+            //return prismDebugRegisterCallback_d3d12(instance, callback);
 #endif /* PRISM_D3D12 */
 #ifdef PRISM_METAL
         case PRISM_INSTANCE_API_METAL:
@@ -2355,9 +2456,10 @@ void prismDestroyCommandList(PrismCommandList commandList) {
 }
 
 PrismResult prismCreateSwapchainWin32(PrismDevice device, void* hwnd, void* hinstance, const PrismSwapchainDesc* pSwapchainDesc, PrismSwapchain* pSwapchain) {
-#ifndef WIN32
+#if !(defined(_WIN32) || defined(_WIN64) || defined(__WIN32__))
     return PRISM_RESULT_ERROR_UNSUPPORTED;
 #else
+
     switch (device->api) {
 #ifdef PRISM_VULKAN
         case PRISM_INSTANCE_API_VULKAN:
@@ -2370,7 +2472,7 @@ PrismResult prismCreateSwapchainWin32(PrismDevice device, void* hwnd, void* hins
         default:
             return PRISM_RESULT_ERROR_UNSUPPORTED;
     }
-#endif /* #ifndef WIN32 */
+#endif /* #if !(defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)) */
 }
 
 PrismResult prismCreateSwapchainXlib(PrismDevice device, void* display, unsigned long window, const PrismSwapchainDesc* pSwapchainDesc, PrismSwapchain* pSwapchain) {

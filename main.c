@@ -1,4 +1,4 @@
-#ifdef WIN32
+#if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)
 #define PRISM_WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #elif defined(__linux__) || defined(__gnu_linux__)
