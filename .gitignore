@@ -1,1 +1,5 @@
 .vs
+out
+build
+xcode
+.DS_Store

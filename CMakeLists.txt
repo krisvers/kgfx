@@ -1,4 +1,4 @@
-﻿# CMakeList.txt : CMake project for prism, include source and define
+# CMakeList.txt : CMake project for prism, include source and define
 # project specific logic here.
 #
 cmake_minimum_required(VERSION 3.8)
@@ -12,18 +12,21 @@ endif()
 project("prism")
 
 find_package(Vulkan REQUIRED)
+find_package(glfw3 REQUIRED)
 
 # Add source to this project's executable.
-add_executable(prism "main.c" "prism.h"    "prism.c" "prism.cpp" "common.h")
+add_executable(prism "main.c" "prism.h" "prism.c" "prism.cpp" "prism.m" "common.h")
 
 include_directories(${Vulkan_INCLUDE_DIRS})
 target_link_directories(prism PRIVATE ${Vulkan_LIBRARY})
 target_link_libraries(prism PRIVATE ${Vulkan_LIBRARIES})
 
-target_link_libraries(prism PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib)
+target_link_libraries(prism PRIVATE "-framework Metal")
+target_link_libraries(prism PRIVATE "-framework Cocoa")
+target_link_libraries(prism PRIVATE "-framework QuartzCore")
+target_link_libraries(prism PRIVATE glfw)
 
-target_compile_definitions(prism PRIVATE PRISM_D3D12)
-target_compile_definitions(prism PRIVATE PRISM_VULKAN)
+# target_link_libraries(prism PRIVATE d3d12.lib dxgi.lib d3dcompiler.lib)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET prism PROPERTY CXX_STANDARD 20)

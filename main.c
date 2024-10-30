@@ -1,12 +1,35 @@
+#ifdef WIN32
+#define PRISM_WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#elif defined(__linux__) || defined(__gnu_linux__)
+#define GLFW_EXPOSE_NATIVE_X11
+#define GLFW_EXPOSE_NATIVE_WAYLAND
+#define PRISM_XLIB
+#define PRISM_XCB
+#define PRISM_WAYLAND
+#elif defined(__APPLE__)
+#define GLFW_EXPOSE_NATIVE_COCOA
+#define PRISM_COCOA
+#endif /* #ifdef WIN32 */
+
 #include "prism.h"
 #include <stdio.h>
 
-PrismResult test(PrismInstanceAPI api) {
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+
+void debugCallbackPrism(PrismInstance instance, PrismDebugSeverity severity, PrismDebugSource source, const char* message) {
+    printf("Prism: %s\n", message);
+}
+
+PrismResult test(GLFWwindow* window, PrismInstanceAPI api) {
     PrismInstance instance;
-    PrismResult result = prismCreateInstance(api, PRISM_INSTANCE_CREATE_FLAG_DEBUG, &instance);
+    PrismResult result = prismCreateInstance(api, PRISM_INSTANCE_CREATE_FLAG_DEBUG | PRISM_INSTANCE_CREATE_FLAG_VALIDATION | PRISM_INSTANCE_CREATE_FLAG_GRAPHICAL, &instance);
     if (result != PRISM_RESULT_SUCCESS) {
         return result;
     }
+    
+    prismDebugRegisterCallback(instance, debugCallbackPrism);
 
     PrismAdapterDetails adapterDetails = { 0 };
     const char memSuffixLookup[] = { 'B', 'K', 'M', 'G', 'T', 'P' };
@@ -29,7 +52,6 @@ PrismResult test(PrismInstanceAPI api) {
         printf("    Max Anisotropy: %f\n", adapterDetails.maxAnisotropy);
 
         printf("    Supports Graphics: %s\n", adapterDetails.supportsGraphics ? "true" : "false");
-        printf("    Supports Transfer: %s\n", adapterDetails.supportsTransfer ? "true" : "false");
         printf("    Supports Compute: %s\n", adapterDetails.supportsCompute ? "true" : "false");
         printf("    Supports RayTracing: %s\n", adapterDetails.supportsRayTracing ? "true" : "false");
 
@@ -71,32 +93,84 @@ PrismResult test(PrismInstanceAPI api) {
     }
 
     PrismDevice device;
-    result = prismCreateDevice(instance, 0, PRISM_TRUE, &device);
+    result = prismCreateDevice(instance, 0, &device);
     if (result != PRISM_RESULT_SUCCESS) {
         printf("Failed to create Prism device\n");
         return result;
     }
-
+    
+    PrismSwapchainDesc swapchainDesc;
+    swapchainDesc.width = 800;
+    swapchainDesc.height = 600;
+    swapchainDesc.format = PRISM_FORMAT_B8G8R8A8_SRGB;
+    swapchainDesc.imageCount = 2;
+    swapchainDesc.presentMode = PRISM_PRESENT_MODE_NO_SYNC;
+    
+    PrismSwapchain swapchain;
+#ifdef PRISM_WIN32
+    result = prismCreateSwapchainWin32(device, glfwGetWin32Window(window), GetModuleHandle(NULL), &swapchainDesc, &swapchain);
+#elif defined(PRISM_XLIB)
+    result = prismCreateSwapchainXlib(device, glfwGetX11Display(window), glfwGetX11Window(window), &swapchainDesc, &swapchain);
+#elif defined(PRISM_COCOA)
+    result = prismCreateSwapchainCocoa(device, glfwGetCocoaWindow(window), &swapchainDesc, &swapchain);
+#endif
+    if (result != PRISM_RESULT_SUCCESS) {
+        printf("Failed to create Prism swapchain\n");
+        return result;
+    }
+    
+    PrismCommandPool commandPool;
+    result = prismCreateCommandPool(device, 1, PRISM_QUEUE_TYPE_GENERIC, &commandPool);
+    if (result != PRISM_RESULT_SUCCESS) {
+        printf("Failed to create command pool\n");
+        return result;
+    }
+    
+    PrismCommandList commandList;
+    result = prismCreateCommandList(commandPool, &commandList);
+    if (result != PRISM_RESULT_SUCCESS) {
+        printf("Failed to create command list\n");
+        return result;
+    }
+    
+    prismDestroyCommandList(commandList);
+    prismDestroyCommandPool(commandPool);
+    prismDestroySwapchain(swapchain);
     prismDestroyDevice(device);
     prismDestroyInstance(instance);
     return PRISM_RESULT_SUCCESS;
 }
 
 int main() {
-    PrismResult result = test(PRISM_INSTANCE_API_VULKAN);
+    if (!glfwInit()) {
+        printf("Failed to initialize GLFW\n");
+        return 1;
+    }
+    
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    GLFWwindow* window = glfwCreateWindow(800, 600, "test", NULL, NULL);
+    if (window == NULL) {
+        printf("Failed to create GLFW window\n");
+        return 1;
+    }
+    
+    PrismResult result = test(window, PRISM_INSTANCE_API_VULKAN);
     if (result != PRISM_RESULT_SUCCESS) {
         printf("Failed to test Vulkan Prism\n");
     }
 
-    result = test(PRISM_INSTANCE_API_D3D12);
+    result = test(window, PRISM_INSTANCE_API_D3D12);
     if (result != PRISM_RESULT_SUCCESS) {
         printf("Failed to test D3D12 Prism\n");
     }
 
-    result = test(PRISM_INSTANCE_API_METAL);
+    result = test(window, PRISM_INSTANCE_API_METAL);
     if (result != PRISM_RESULT_SUCCESS) {
         printf("Failed to test Metal Prism\n");
     }
 
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    
     return 0;
 }
