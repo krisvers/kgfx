@@ -420,6 +420,9 @@ typedef struct KGFXVertexInputDesc {
 
 typedef struct KGFXRenderTargetDesc {
     KGFXFormat format;
+    uint32_t width;
+    uint32_t height;
+    uint32_t layers;
     KGFXBool enableBlending;
     KGFXBlendOp colorBlendOp;
     KGFXBlendFactor srcColorBlendFactor;
@@ -464,6 +467,10 @@ typedef struct KGFXStencilOpDesc {
 
 typedef struct KGFXDepthStencilDesc {
     KGFXFormat format;
+    uint32_t width;
+    uint32_t height;
+    uint32_t layers;
+
     KGFXCompareOp compareOp;
     KGFXBool writeDepth;
     KGFXBool testDepth;
@@ -495,6 +502,9 @@ typedef struct KGFXGraphicsPipelineDesc {
     KGFXShader* pShaders;
     
     KGFXLogicOp blendLogicOp;
+    uint32_t framebufferWidth;
+    uint32_t framebufferHeight;
+    uint32_t framebufferLayers;
     uint32_t renderTargetCount;
     KGFXRenderTargetDesc* pRenderTargetDescs;
     KGFXDepthStencilDesc depthStencilDesc;
@@ -548,7 +558,7 @@ KGFX_API void kgfxCmdBindRenderTargets(KGFXCommandList commandList, uint32_t ren
 KGFX_API void kgfxCmdBeginRendering(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 KGFX_API void kgfxCmdEndRendering(KGFXCommandList commandList);
 KGFX_API void kgfxCmdBindIndexBuffer(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
-KGFX_API void kgfxCmdBindVertexBuffers(KGFXCommandList commandList, KGFXBuffer buffer, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+KGFX_API void kgfxCmdBindVertexBuffers(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 KGFX_API void kgfxCmdDraw(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
 KGFX_API void kgfxCmdDrawIndexed(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
 KGFX_API void kgfxCmdDrawIndirect(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
@@ -626,6 +636,25 @@ void kgfxDestroyCommandPool_vulkan(KGFXCommandPool commandPool);
 
 KGFXResult kgfxCreateCommandList_vulkan(KGFXCommandPool commandPool, KGFXCommandList* pCommandList);
 void kgfxDestroyCommandList_vulkan(KGFXCommandList commandList);
+void kgfxResetCommandList_vulkan(KGFXCommandList commandList);
+
+KGFXResult kgfxOpenCommandList_vulkan(KGFXCommandList commandList, KGFXBool isOneTime);
+KGFXResult kgfxCloseCommandList_vulkan(KGFXCommandList commandList);
+KGFXResult kgfxSubmitCommandList_vulkan(KGFXCommandList commandList);
+
+void kgfxCmdBindGraphicsPipeline_vulkan(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
+void kgfxCmdSetViewportAndScissor_vulkan(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
+void kgfxCmdBindRenderTargets_vulkan(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
+void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
+void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList);
+void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
+void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
+void kgfxCmdDrawIndexed_vulkan(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
+void kgfxCmdDrawIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+void kgfxCmdDrawIndexedIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+
+KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain);
 
 KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
 KGFXResult kgfxCreateSwapchainXlib_vulkan(KGFXDevice device, void* display, unsigned long window, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
@@ -633,6 +662,8 @@ KGFXResult kgfxCreateSwapchainXcb_vulkan(KGFXDevice device, void* connection, ui
 KGFXResult kgfxCreateSwapchainWayland_vulkan(KGFXDevice device, void* display, void* surface, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
 KGFXResult kgfxCreateSwapchainCocoa_vulkan(KGFXDevice device, void* nsWindow, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
 void kgfxDestroySwapchain_vulkan(KGFXSwapchain swapchain);
+
+KGFXTexture kgfxGetSwapchainBackbuffer_vulkan(KGFXSwapchain swapchain);
 
 #endif /* #ifdef KGFX_VULKAN */
 
@@ -661,9 +692,30 @@ void kgfxDestroyCommandPool_d3d12(KGFXCommandPool commandPool);
 
 KGFXResult kgfxCreateCommandList_d3d12(KGFXCommandPool commandPool, KGFXCommandList* pCommandList);
 void kgfxDestroyCommandList_d3d12(KGFXCommandList commandList);
+void kgfxResetCommandList_d3d12(KGFXCommandList commandList);
+
+KGFXResult kgfxOpenCommandList_d3d12(KGFXCommandList commandList, KGFXBool isOneTime);
+KGFXResult kgfxCloseCommandList_d3d12(KGFXCommandList commandList);
+KGFXResult kgfxSubmitCommandList_d3d12(KGFXCommandList commandList);
+
+void kgfxCmdBindGraphicsPipeline_d3d12(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
+void kgfxCmdSetViewportAndScissor_d3d12(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
+void kgfxCmdBindRenderTargets_d3d12(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
+void kgfxCmdBeginRendering_d3d12(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
+void kgfxCmdEndRendering_d3d12(KGFXCommandList commandList);
+void kgfxCmdBindIndexBuffer_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
+void kgfxCmdBindVertexBuffers_d3d12(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+void kgfxCmdDraw(KGFXCommandList _d3d12commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
+void kgfxCmdDrawIndexed_d3d12(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
+void kgfxCmdDrawIndirect_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+void kgfxCmdDrawIndexedIndirect_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+
+KGFXResult kgfxPresentSwapchain_d3d12(KGFXSwapchain swapchain);
 
 KGFXResult kgfxCreateSwapchainWin32_d3d12(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
 void kgfxDestroySwapchain_d3d12(KGFXSwapchain swapchain);
+
+KGFXTexture kgfxGetSwapchainBackbuffer_d3d12(KGFXSwapchain swapchain);
 
 #endif /* #ifdef KGFX_D3D12 */
 
@@ -692,9 +744,30 @@ void kgfxDestroyCommandPool_metal(KGFXCommandPool commandPool);
 
 KGFXResult kgfxCreateCommandList_metal(KGFXCommandPool commandPool, KGFXCommandList* pCommandList);
 void kgfxDestroyCommandList_metal(KGFXCommandList commandList);
+void kgfxResetCommandList_metal(KGFXCommandList commandList);
+
+KGFXResult kgfxOpenCommandList_metal(KGFXCommandList commandList, KGFXBool isOneTime);
+KGFXResult kgfxCloseCommandList_metal(KGFXCommandList commandList);
+KGFXResult kgfxSubmitCommandList_metal(KGFXCommandList commandList);
+
+void kgfxCmdBindGraphicsPipeline_metal(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
+void kgfxCmdSetViewportAndScissor_metal(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
+void kgfxCmdBindRenderTargets_metal(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
+void kgfxCmdBeginRendering_metal(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
+void kgfxCmdEndRendering_metal(KGFXCommandList commandList);
+void kgfxCmdBindIndexBuffer_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
+void kgfxCmdBindVertexBuffers_metal(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+void kgfxCmdDraw_metal(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
+void kgfxCmdDrawIndexed_metal(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
+void kgfxCmdDrawIndirect_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+void kgfxCmdDrawIndexedIndirect_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+
+KGFXResult kgfxPresentSwapchain_metal(KGFXSwapchain swapchain);
 
 KGFXResult kgfxCreateSwapchainCocoa_metal(KGFXDevice device, void* nsWindow, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
 void kgfxDestroySwapchain_metal(KGFXSwapchain swapchain);
+
+KGFXTexture kgfxGetSwapchainBackbuffer_metal(KGFXSwapchain swapchain);
 
 #endif /* #ifdef KGFX_METAL */
 
@@ -764,13 +837,45 @@ typedef struct KGFXDevice_Vulkan_t {
     } vk;
 } KGFXDevice_Vulkan_t;
 
+typedef struct KGFXTexture_Vulkan_t {
+    KGFXObject obj;
+    KGFXDevice device;
+
+    KGFXFormat format;
+    uint32_t width;
+    uint32_t height;
+    uint32_t layers;
+
+    struct {
+        VkImage image;
+        VkImageView imageView;
+        VkDeviceMemory memory;
+        VkFormat format;
+        VkImageLayout layout;
+    } vk;
+
+    KGFXBool isSwapchainTexture;
+} KGFXTexture_Vulkan_t;
+
+typedef struct KGFXSwapchainTexture_Vulkan_t {
+    KGFXTexture_Vulkan_t base;
+    struct KGFXSwapchain_Vulkan_t* swapchain;
+} KGFXSwapchainTexture_Vulkan_t;
+
 typedef struct KGFXSwapchain_Vulkan_t {
     KGFXObject obj;
     KGFXDevice device;
+
+    KGFXSwapchainTexture_Vulkan_t backbuffer;
     
     struct {
         VkSwapchainKHR swapchain;
         VkSurfaceKHR surface;
+        KGFX_LIST(VkImage) images;
+        KGFX_LIST(VkImageView) imageViews;
+
+        VkSemaphore imageAvailableSemaphore;
+        uint32_t imageIndex;
     } vk;
 } KGFXSwapchain_Vulkan_t;
 
@@ -789,12 +894,17 @@ typedef struct KGFXShader_Vulkan_t {
 typedef struct KGFXGraphicsPipeline_Vulkan_t {
     KGFXObject obj;
     KGFXDevice device;
+
+    uint32_t framebufferWidth;
+    uint32_t framebufferHeight;
+    uint32_t framebufferLayers;
     
     struct {
         VkDescriptorSetLayout descLayout;
         VkRenderPass renderPass;
         VkPipelineLayout pipelineLayout;
         VkPipeline pipeline;
+        VkFramebuffer framebuffer;
     } vk;
 } KGFXGraphicsPipeline_Vulkan_t;
 
@@ -820,6 +930,12 @@ typedef struct KGFXCommandList_Vulkan_t {
     struct {
         VkCommandBuffer commandBuffer;
     } vk;
+
+    struct {
+        KGFX_LIST(KGFXTexture) renderTargets;
+        KGFXTexture depthStencilTarget;
+        KGFXGraphicsPipeline_Vulkan_t* graphicsPipeline;
+    } bound;
 } KGFXCommandList_Vulkan_t;
 
 typedef enum KGFX_Vulkan_WindowType_t {
@@ -862,6 +978,25 @@ typedef KGFX_LIST(const char*) KGFX_Vulkan_ActualLayerList_t;
     memcpy((void*) list_.data[index_].name, name_, strlen(name_) + 1); \
     list_.data[index_++].isNecessary = necessary_;
 #define KGFX_ADD_LAYER(list_, index_, name_, necessary_) KGFX_ADD_EXTENSION(list_, index_, name_, necessary_)
+
+/* (highest) TODO: transtiion */
+void kgfx_vulkan_transitionTexture(KGFXCommandList_Vulkan_t* pCommandList, KGFXTexture_Vulkan_t* pTexture, VkImageLayout layout) {
+    VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = 0;
+    barrier.oldLayout = pTexture->vk.layout;
+    barrier.newLayout = layout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = pTexture->vk.image;
+    barrier.subresourceRange.aspectMask = (pTexture->format == KGFX_FORMAT_D32_FLOAT || pTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT || pTexture->format == KGFX_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH : VK_IMAGE_ASPECT_COLOR;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = pTexture->layers;
+    vkCmdPipelineBarrier(pCommandList->vk.commandBuffer, , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+    pTexture->vk.layout = layout;
+}
 
 KGFXResult kgfx_vulkan_getExtensions(VkPhysicalDevice vkPhysicalDevice, KGFX_Vulkan_ExtensionRequestList_t requestedExtensionList, KGFX_Vulkan_ActualExtensionList_t* pList) {
     KGFX_LIST(VkExtensionProperties) vkExtensionProperties = { NULL, 0 };
@@ -1129,7 +1264,7 @@ KGFXBool kgfx_vulkan_vkPresentMode(KGFXPresentMode presentMode, VkPresentModeKHR
     return KGFX_TRUE;
 }
 
-KGFXBool kgfx_vulkan_vkShaderStage(KGFXShaderStageMask stages, VkShaderStageFlags* pStages) {
+KGFXBool kgfx_vulkan_vkShaderStage(KGFXShaderStageMask stages, VkShaderStageFlagBits* pStages) {
     VkShaderStageFlags flags = 0;
     if (stages & KGFX_SHADER_STAGE_VERTEX) {
         flags |= VK_SHADER_STAGE_VERTEX_BIT;
@@ -1159,7 +1294,7 @@ KGFXBool kgfx_vulkan_vkShaderStage(KGFXShaderStageMask stages, VkShaderStageFlag
         return KGFX_FALSE;
     }
     
-    *pStages = flags;
+    *pStages = (VkShaderStageFlagBits) flags;
     return KGFX_TRUE;
 }
 
@@ -1223,7 +1358,7 @@ KGFXBool kgfx_vulkan_vkPolygonMode(KGFXFillMode fillMode, VkPolygonMode* pPolyMo
     return KGFX_TRUE;
 }
 
-KGFXBool kgfx_vulkan_vkCullMode(KGFXCullMode cullMode, VkCullModeFlagBits* pCullMode) {
+KGFXBool kgfx_vulkan_vkCullMode(KGFXCullMode cullMode, VkCullModeFlags* pCullMode) {
     switch (cullMode) {
         case KGFX_CULL_MODE_NONE:
             *pCullMode = VK_CULL_MODE_NONE;
@@ -1539,15 +1674,13 @@ VkBool32 kgfx_vulkan_debugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlag
         return VK_FALSE;
     }
     
-    KGFXDebugSeverity severity = 0;
+    KGFXDebugSeverity severity = KGFX_DEBUG_SEVERITY_INFO;
     if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         severity = KGFX_DEBUG_SEVERITY_ERROR;
     } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
         severity = KGFX_DEBUG_SEVERITY_WARNING;
     } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
         severity = KGFX_DEBUG_SEVERITY_VERBOSE;
-    } else {
-        severity = KGFX_DEBUG_SEVERITY_INFO;
     }
     
     vulkanInstance->debugCallback(&vulkanInstance->obj, severity, KGFX_DEBUG_SOURCE_UNDERLYING_API, pCallbackData->pMessage);
@@ -1566,6 +1699,22 @@ void kgfx_vulkan_debugNameObject(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType
         
         vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
     }
+}
+
+KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchainTexture_Vulkan_t* backbuffer) {
+    KGFXSwapchain_Vulkan_t* vulkanSwapchain = backbuffer->swapchain;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
+    
+    VkResult result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, VK_NULL_HANDLE, &vulkanSwapchain->vk.imageIndex);
+    if (result != VK_SUCCESS) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    backbuffer->base.vk.image = vulkanSwapchain->vk.images.data[vulkanSwapchain->vk.imageIndex];
+    backbuffer->base.vk.imageView = vulkanSwapchain->vk.imageViews.data[vulkanSwapchain->vk.imageIndex];
+    return KGFX_RESULT_SUCCESS;
+
 }
 
 KGFXResult kgfxCreateInstance_vulkan(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
@@ -1875,8 +2024,16 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     }
     
     VkPhysicalDevice vkPhysicalDevice = vulkanInstance->vk.physicalDevices.data[adapterID];
-    VkPhysicalDeviceFeatures features;
-    vkGetPhysicalDeviceFeatures(vkPhysicalDevice, &features);
+
+    VkPhysicalDeviceImagelessFramebufferFeatures imagelessFramebufferFeatures;
+    imagelessFramebufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES;
+    imagelessFramebufferFeatures.pNext = NULL;
+    imagelessFramebufferFeatures.imagelessFramebuffer = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 features2;
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &imagelessFramebufferFeatures;
+    vkGetPhysicalDeviceFeatures2(vkPhysicalDevice, &features2);
     
     KGFX_LIST(VkQueueFamilyProperties) vkQueueFamilies = { NULL, 0 };
     vkGetPhysicalDeviceQueueFamilyProperties(vkPhysicalDevice, &vkQueueFamilies.length, NULL);
@@ -1989,7 +2146,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     
     VkDeviceCreateInfo createInfo;
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pNext = NULL;
+    createInfo.pNext = &imagelessFramebufferFeatures;
     createInfo.flags = 0;
     createInfo.queueCreateInfoCount = uniqueQueueFamilyCount;
     createInfo.pQueueCreateInfos = uniqueQueueFamilyIndices;
@@ -1997,7 +2154,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     createInfo.ppEnabledLayerNames = NULL;
     createInfo.enabledExtensionCount = 0;
     createInfo.ppEnabledExtensionNames = NULL;
-    createInfo.pEnabledFeatures = &features;
+    createInfo.pEnabledFeatures = &features2.features;
     
     KGFX_Vulkan_ExtensionRequestList_t requestedExtensionList = { NULL, 0 };
     
@@ -2343,6 +2500,9 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
     
     KGFX_LIST(VkAttachmentReference) colorAttachments;
     KGFX_LIST_INIT(colorAttachments, pPipelineDesc->renderTargetCount, VkAttachmentReference);
+
+    KGFX_LIST(VkFramebufferAttachmentImageInfo) framebufferAttachmentImageInfos;
+    KGFX_LIST_INIT(framebufferAttachmentImageInfos, pPipelineDesc->renderTargetCount + ((pPipelineDesc->depthStencilDesc.format != KGFX_FORMAT_UNKNOWN) ? 1 : 0), VkFramebufferAttachmentImageInfo);
     
     for (uint32_t i = 0; i < pPipelineDesc->renderTargetCount; ++i) {
         colorAttachmentBlends.data[i].blendEnable = pPipelineDesc->pRenderTargetDescs[i].enableBlending;
@@ -2424,6 +2584,16 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         
         colorAttachments.data[i].attachment = i;
         colorAttachments.data[i].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        framebufferAttachmentImageInfos.data[i].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+        framebufferAttachmentImageInfos.data[i].pNext = NULL;
+        framebufferAttachmentImageInfos.data[i].flags = 0;
+        framebufferAttachmentImageInfos.data[i].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        framebufferAttachmentImageInfos.data[i].width = pPipelineDesc->pRenderTargetDescs[i].width;
+        framebufferAttachmentImageInfos.data[i].height = pPipelineDesc->pRenderTargetDescs[i].height;
+        framebufferAttachmentImageInfos.data[i].layerCount = pPipelineDesc->pRenderTargetDescs[i].layers;
+        framebufferAttachmentImageInfos.data[i].viewFormatCount = 1;
+        framebufferAttachmentImageInfos.data[i].pViewFormats = &attachmentDescriptions.data[i].format;
     }
     
     VkAttachmentReference depthStencilAttachmentRef;
@@ -2465,7 +2635,16 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
             /* TODO: crash out safely */
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
-        
+
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].pNext = NULL;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].flags = 0;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].width = pPipelineDesc->depthStencilDesc.width;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].height = pPipelineDesc->depthStencilDesc.height;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].layerCount = pPipelineDesc->depthStencilDesc.layers;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].viewFormatCount = 1;
+        framebufferAttachmentImageInfos.data[attachmentDescriptions.length - 1].pViewFormats = &attachmentDescriptions.data[attachmentDescriptions.length - 1].format;
         
         depthStencilAttachmentRef.attachment = attachmentDescriptions.length = 1;
         depthStencilAttachmentRef.layout = attachmentDescriptions.data[attachmentDescriptions.length - 1].initialLayout;
@@ -2526,6 +2705,29 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    VkFramebufferAttachmentsCreateInfo framebufferAttachmentsCreateInfo;
+    framebufferAttachmentsCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO_KHR;
+    framebufferAttachmentsCreateInfo.pNext = NULL;
+    framebufferAttachmentsCreateInfo.attachmentImageInfoCount = framebufferAttachmentImageInfos.length;
+    framebufferAttachmentsCreateInfo.pAttachmentImageInfos = framebufferAttachmentImageInfos.data;
+
+    VkFramebufferCreateInfo framebufferCreateInfo;
+    framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferCreateInfo.pNext = &framebufferAttachmentsCreateInfo;
+    framebufferCreateInfo.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
+    framebufferCreateInfo.renderPass = vkRenderPass;
+    framebufferCreateInfo.attachmentCount = attachmentDescriptions.length;
+    framebufferCreateInfo.pAttachments = NULL;
+    framebufferCreateInfo.width = pPipelineDesc->framebufferWidth;
+    framebufferCreateInfo.height = pPipelineDesc->framebufferHeight;
+    framebufferCreateInfo.layers = pPipelineDesc->framebufferLayers;
+
+    VkFramebuffer vkFramebuffer;
+    if (vkCreateFramebuffer(vulkanDevice->vk.device, &framebufferCreateInfo, NULL, &vkFramebuffer) != VK_SUCCESS) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
     
     KGFX_LIST(VkDescriptorSetLayoutBinding) descSetLayoutBindings;
     KGFX_LIST_INIT(descSetLayoutBindings, pPipelineDesc->uniformSignatureDesc.uniformCount, VkDescriptorSetLayoutBinding);
@@ -2543,7 +2745,7 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         }
         
         descSetLayoutBindings.data[i].descriptorCount = pPipelineDesc->uniformSignatureDesc.pUniforms[i].arrayLength;
-        if (!kgfx_vulkan_vkShaderStage(pPipelineDesc->uniformSignatureDesc.pUniforms[i].stages, &descSetLayoutBindings.data[i].stageFlags)) {
+        if (!kgfx_vulkan_vkShaderStage(pPipelineDesc->uniformSignatureDesc.pUniforms[i].stages, (VkShaderStageFlagBits*) &descSetLayoutBindings.data[i].stageFlags)) {
             /* TODO: crash out safely */
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
@@ -2627,10 +2829,14 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
     vulkanPipeline->obj.api = KGFX_INSTANCE_API_VULKAN;
     vulkanPipeline->obj.instance = device->instance;
     vulkanPipeline->device = device;
+    vulkanPipeline->framebufferWidth = pPipelineDesc->framebufferWidth;
+    vulkanPipeline->framebufferHeight = pPipelineDesc->framebufferHeight;
+    vulkanPipeline->framebufferLayers = pPipelineDesc->framebufferLayers;
     vulkanPipeline->vk.descLayout = vkDescLayout;
     vulkanPipeline->vk.pipelineLayout = vkPipelineLayout;
     vulkanPipeline->vk.renderPass = vkRenderPass;
     vulkanPipeline->vk.pipeline = vkPipeline;
+    vulkanPipeline->vk.framebuffer = vkFramebuffer;
     
     *pPipeline = &vulkanPipeline->obj;
     return KGFX_RESULT_SUCCESS;
@@ -2642,6 +2848,7 @@ void kgfxDestroyGraphicsPipeline_vulkan(KGFXGraphicsPipeline pipeline) {
     vkDestroyPipeline(vulkanDevice->vk.device, vulkanPipeline->vk.pipeline, NULL);
     vkDestroyPipelineLayout(vulkanDevice->vk.device, vulkanPipeline->vk.pipelineLayout, NULL);
     vkDestroyDescriptorSetLayout(vulkanDevice->vk.device, vulkanPipeline->vk.descLayout, NULL);
+    vkDestroyFramebuffer(vulkanDevice->vk.device, vulkanPipeline->vk.framebuffer, NULL);
     vkDestroyRenderPass(vulkanDevice->vk.device, vulkanPipeline->vk.renderPass, NULL);
     free(vulkanPipeline);
 }
@@ -2738,6 +2945,7 @@ KGFXResult kgfxCreateCommandList_vulkan(KGFXCommandPool commandPool, KGFXCommand
     vulkanCommandList->obj.instance = vulkanDevice->obj.instance;
     vulkanCommandList->commandPool = commandPool;
     vulkanCommandList->vk.commandBuffer = vkCommandBuffer;
+    memset(&vulkanCommandList->bound, 0, sizeof(vulkanCommandList->bound));
     
     *pCommandList = &vulkanCommandList->obj;
     return KGFX_RESULT_SUCCESS;
@@ -2749,6 +2957,220 @@ void kgfxDestroyCommandList_vulkan(KGFXCommandList commandList) {
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
     vkFreeCommandBuffers(vulkanDevice->vk.device, vulkanCommandPool->vk.commandPool, 1, &vulkanCommandList->vk.commandBuffer);
     free(commandList);
+    --vulkanCommandPool->currentListCount;
+}
+
+void kgfxResetCommandList_vulkan(KGFXCommandList commandList) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    vkResetCommandBuffer(vulkanCommandList->vk.commandBuffer, 0);
+    memset(&vulkanCommandList->bound, 0, sizeof(vulkanCommandList->bound));
+}
+
+KGFXResult kgfxOpenCommandList_vulkan(KGFXCommandList commandList, KGFXBool isOneTime) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    VkCommandBufferBeginInfo beginInfo;
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.pNext = NULL;
+    beginInfo.flags = 0;
+    beginInfo.pInheritanceInfo = NULL;
+    
+    if (isOneTime) {
+        beginInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    }
+    
+    if (vkBeginCommandBuffer(vulkanCommandList->vk.commandBuffer, &beginInfo) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult kgfxCloseCommandList_vulkan(KGFXCommandList commandList) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    if (vkEndCommandBuffer(vulkanCommandList->vk.commandBuffer) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult kgfxSubmitCommandList_vulkan(KGFXCommandList commandList) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    
+    /* TODO: Vulkan proper sync */
+    VkSubmitInfo submitInfo;
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.pNext = NULL;
+    submitInfo.waitSemaphoreCount = 0;
+    submitInfo.pWaitSemaphores = NULL;
+    submitInfo.pWaitDstStageMask = NULL;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &vulkanCommandList->vk.commandBuffer;
+    submitInfo.signalSemaphoreCount = 0;
+    submitInfo.pSignalSemaphores = NULL;
+    
+    if (vkQueueSubmit(vulkanCommandPool->vk.queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    return KGFX_RESULT_SUCCESS;
+}
+
+void kgfxCmdBindGraphicsPipeline_vulkan(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXGraphicsPipeline_Vulkan_t* vulkanPipeline = (KGFXGraphicsPipeline_Vulkan_t*) pipeline;
+    vkCmdBindPipeline(vulkanCommandList->vk.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline->vk.pipeline);
+    vulkanCommandList->bound.graphicsPipeline = vulkanPipeline;
+}
+
+void kgfxCmdSetViewportAndScissor_vulkan(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFX_LIST(VkViewport) viewports = { NULL, 0 };
+    KGFX_LIST(VkRect2D) scissors = { NULL, 0 };
+    KGFX_LIST_INIT(viewports, viewportAndScissorCount, VkViewport);
+    KGFX_LIST_INIT(scissors, viewportAndScissorCount, VkRect2D);
+
+    for (uint32_t i = 0; i < viewportAndScissorCount; ++i) {
+        viewports.data[i].x = pViewports[i].x;
+        viewports.data[i].y = pViewports[i].y;
+        viewports.data[i].width = pViewports[i].width;
+        viewports.data[i].height = pViewports[i].height;
+        viewports.data[i].minDepth = pViewports[i].minDepth;
+        viewports.data[i].maxDepth = pViewports[i].maxDepth;
+        
+        scissors.data[i].offset.x = pScissors[i].x;
+        scissors.data[i].offset.y = pScissors[i].y;
+        scissors.data[i].extent.width = pScissors[i].width;
+        scissors.data[i].extent.height = pScissors[i].height;
+    }
+
+    vkCmdSetViewport(vulkanCommandList->vk.commandBuffer, 0, viewportAndScissorCount, viewports.data);
+    vkCmdSetScissor(vulkanCommandList->vk.commandBuffer, 0, viewportAndScissorCount, scissors.data);
+
+    KGFX_LIST_FREE(viewports);
+    KGFX_LIST_FREE(scissors);
+}
+
+void kgfxCmdBindRenderTargets_vulkan(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFX_LIST(KGFXTexture) renderTargets = { NULL, 0 };
+    KGFX_LIST_INIT(renderTargets, renderTargetCount, KGFXTexture);
+
+    memcpy(renderTargets.data, pRenderTargets, sizeof(KGFXTexture) * renderTargetCount);
+    vulkanCommandList->bound.renderTargets.data = renderTargets.data;
+    vulkanCommandList->bound.renderTargets.length = renderTargetCount;
+    vulkanCommandList->bound.depthStencilTarget = depthStencilTarget;
+}
+
+void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFX_LIST(VkClearValue) clearValues = { NULL, 0 };
+    KGFX_LIST_INIT(clearValues, renderTargetClearValueCount + (pDepthStencilClearValue != NULL) ? 1 : 0, VkClearValue);
+
+    for (uint32_t i = 0; i < renderTargetClearValueCount; ++i) {
+        switch (pRenderTargetClearValues[i].type) {
+            case KGFX_CLEAR_VALUE_TYPE_F32:
+                clearValues.data[i].color.float32[0] = pRenderTargetClearValues[i].value.f32[0];
+                clearValues.data[i].color.float32[1] = pRenderTargetClearValues[i].value.f32[1];
+                clearValues.data[i].color.float32[2] = pRenderTargetClearValues[i].value.f32[2];
+                clearValues.data[i].color.float32[3] = pRenderTargetClearValues[i].value.f32[3];
+                break;
+            case KGFX_CLEAR_VALUE_TYPE_S32:
+                clearValues.data[i].color.int32[0] = pRenderTargetClearValues[i].value.s32[0];
+                clearValues.data[i].color.int32[1] = pRenderTargetClearValues[i].value.s32[1];
+                clearValues.data[i].color.int32[2] = pRenderTargetClearValues[i].value.s32[2];
+                clearValues.data[i].color.int32[3] = pRenderTargetClearValues[i].value.s32[3];
+                break;
+            case KGFX_CLEAR_VALUE_TYPE_U32:
+                clearValues.data[i].color.uint32[0] = pRenderTargetClearValues[i].value.u32[0];
+                clearValues.data[i].color.uint32[1] = pRenderTargetClearValues[i].value.u32[1];
+                clearValues.data[i].color.uint32[2] = pRenderTargetClearValues[i].value.u32[2];
+                clearValues.data[i].color.uint32[3] = pRenderTargetClearValues[i].value.u32[3];
+                break;
+            case KGFX_CLEAR_VALUE_TYPE_DEPTH_STENCIL:
+                clearValues.data[i].depthStencil.depth = pRenderTargetClearValues[i].value.depthStencil.depth;
+                clearValues.data[i].depthStencil.stencil = pRenderTargetClearValues[i].value.depthStencil.stencil;
+                break;
+        }
+    }
+
+    KGFX_LIST(VkImageView) attachments = { NULL, 0 };
+    KGFX_LIST_INIT(attachments, vulkanCommandList->bound.renderTargets.length + (vulkanCommandList->bound.depthStencilTarget != NULL) ? 1 : 0, VkImageView);
+    for (uint32_t i = 0; i < vulkanCommandList->bound.renderTargets.length; ++i) {
+        KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanCommandList->bound.renderTargets.data[i];
+        if (vulkanTexture->isSwapchainTexture) {
+            KGFXResult result = kgfx_vulkan_acquireSwapchainImage((KGFXSwapchainTexture_Vulkan_t*) vulkanTexture);
+            if (result != KGFX_RESULT_SUCCESS) {
+                KGFX_LIST_FREE(clearValues);
+                KGFX_LIST_FREE(attachments);
+                return;
+            }
+        }
+
+        attachments.data[i] = vulkanTexture->vk.imageView;
+    }
+
+    if (vulkanCommandList->bound.depthStencilTarget != NULL) {
+        KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanCommandList->bound.depthStencilTarget;
+        attachments.data[attachments.length - 1] = vulkanTexture->vk.imageView;
+    }
+
+    VkRenderPassAttachmentBeginInfo attachmentBeginInfo;
+    attachmentBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO;
+    attachmentBeginInfo.pNext = NULL;
+    attachmentBeginInfo.attachmentCount = attachments.length;
+    attachmentBeginInfo.pAttachments = attachments.data;
+
+    VkRenderPassBeginInfo beginInfo;
+    beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    beginInfo.pNext = &attachmentBeginInfo;
+    beginInfo.renderPass = vulkanCommandList->bound.graphicsPipeline->vk.renderPass;
+    beginInfo.framebuffer = vulkanCommandList->bound.graphicsPipeline->vk.framebuffer;
+    beginInfo.renderArea.offset.x = 0;
+    beginInfo.renderArea.offset.y = 0;
+    beginInfo.renderArea.extent.width = vulkanCommandList->bound.graphicsPipeline->framebufferWidth;
+    beginInfo.renderArea.extent.height = vulkanCommandList->bound.graphicsPipeline->framebufferHeight;
+    beginInfo.clearValueCount = clearValues.length;
+    beginInfo.pClearValues = clearValues.data;
+
+    vkCmdBeginRenderPass(vulkanCommandList->vk.commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
+}
+
+void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    vkCmdEndRenderPass(vulkanCommandList->vk.commandBuffer);
+}
+
+void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
+    return;
+}
+
+void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {
+    return;
+}
+
+void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {
+    return;
+}
+
+void kgfxCmdDrawIndexed_vulkan(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    return;
+}
+
+void kgfxCmdDrawIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    return;
+}
+
+void kgfxCmdDrawIndexedIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    return;
+}
+
+KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)
@@ -2775,8 +3197,8 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
         createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
         createInfo.pNext = NULL;
         createInfo.flags = 0;
-        createInfo.hwnd = hwnd;
-        createInfo.hinstance = hinstance;
+        createInfo.hwnd = (HWND) hwnd;
+        createInfo.hinstance = (HINSTANCE) hinstance;
 
         VkSurfaceKHR vkSurface;
         if (vkCreateWin32SurfaceKHR(vulkanInstance->vk.instance, &createInfo, NULL, &vkSurface) != VK_SUCCESS) {
@@ -2806,9 +3228,14 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
     createInfo.flags = 0;
     createInfo.surface = surface->vk.surface;
     createInfo.minImageCount = pSwapchainDesc->imageCount;
-    createInfo.imageFormat = kgfx_vulkan_vkFormat(pSwapchainDesc->format);
+    if (!kgfx_vulkan_vkFormat(pSwapchainDesc->format, &createInfo.imageFormat)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
     createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    createInfo.imageExtent = (VkExtent2D){ pSwapchainDesc->width, pSwapchainDesc->height };
+    createInfo.imageExtent.width = pSwapchainDesc->width;
+    createInfo.imageExtent.height = pSwapchainDesc->height;
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -2816,7 +3243,11 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
     createInfo.pQueueFamilyIndices = NULL;
     createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = kgfx_vulkan_vkPresentMode(pSwapchainDesc->presentMode);
+    if (!kgfx_vulkan_vkPresentMode(pSwapchainDesc->presentMode, &createInfo.presentMode)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
     if (createInfo.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
         vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
         KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
@@ -2833,11 +3264,114 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    
     kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Win32 Swapchain");
+
+    KGFX_LIST(VkImage) images = { NULL, 0 };
+    KGFX_LIST_INIT(images, pSwapchainDesc->imageCount, VkImage);
+
+    if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, NULL) != VK_SUCCESS) {
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (images.length != pSwapchainDesc->imageCount) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
+        }
+
+        KGFX_LIST_FREE(images);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, images.data) != VK_SUCCESS) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
+        }
+
+        KGFX_LIST_FREE(images);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    KGFX_LIST(VkImageView) imageViews = { NULL, 0 };
+    KGFX_LIST_INIT(imageViews, images.length, VkImageView);
+
+    for (uint32_t i = 0; i < images.length; ++i) {
+        VkImageViewCreateInfo imageViewCreateInfo;
+        imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        imageViewCreateInfo.pNext = NULL;
+        imageViewCreateInfo.flags = 0;
+        imageViewCreateInfo.image = images.data[i];
+        imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        imageViewCreateInfo.format = createInfo.imageFormat;
+        imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+        imageViewCreateInfo.subresourceRange.levelCount = 1;
+        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+        imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(vulkanDevice->vk.device, &imageViewCreateInfo, NULL, &imageViews.data[i]) != VK_SUCCESS) {
+            for (uint32_t j = 0; j < i; ++j) {
+                vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[j], NULL);
+            }
+            KGFX_LIST_FREE(images);
+            KGFX_LIST_FREE(imageViews);
+            vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+            vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+            KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+
+        char viewBuffer[64] = "KGFX Swapchain Image View ";
+        char imageBuffer[64] = "KGFX Swapchain Image ";
+
+        size_t viewLength = strlen(viewBuffer);
+        size_t imageLength = strlen(imageBuffer);
+
+        snprintf(viewBuffer + viewLength, sizeof(viewBuffer) - viewLength, "%u", i);
+        snprintf(imageBuffer + imageLength, sizeof(imageBuffer) - imageLength, "%u", i);
+
+        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE_VIEW, imageViews.data[i], viewBuffer);
+        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE, images.data[i], imageBuffer);
+    }
+
+    VkSemaphoreCreateInfo semaphoreCreateInfo;
+    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphoreCreateInfo.pNext = NULL;
+    semaphoreCreateInfo.flags = 0;
+
+    VkSemaphore vkImageAvailableSemaphore;
+    if (vkCreateSemaphore(vulkanDevice->vk.device, &semaphoreCreateInfo, NULL, &vkImageAvailableSemaphore) != VK_SUCCESS) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[i], NULL);
+        }
+
+        KGFX_LIST_FREE(images);
+        KGFX_LIST_FREE(imageViews);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
 
     KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) malloc(sizeof(KGFXSwapchain_Vulkan_t));
     if (vulkanSwapchain == NULL) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[i], NULL);
+        }
+        KGFX_LIST_FREE(images);
+        KGFX_LIST_FREE(imageViews);
         vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
         vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
         KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
@@ -2847,8 +3381,24 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
     vulkanSwapchain->obj.api = KGFX_INSTANCE_API_VULKAN;
     vulkanSwapchain->obj.instance = device->instance;
     vulkanSwapchain->device = device;
+    vulkanSwapchain->backbuffer.base.obj.api = KGFX_INSTANCE_API_VULKAN;
+    vulkanSwapchain->backbuffer.base.obj.instance = device->instance;
+    vulkanSwapchain->backbuffer.base.device = device;
+    vulkanSwapchain->backbuffer.base.format = pSwapchainDesc->format;
+    vulkanSwapchain->backbuffer.base.vk.image = VK_NULL_HANDLE;
+    vulkanSwapchain->backbuffer.base.vk.imageView = VK_NULL_HANDLE;
+    vulkanSwapchain->backbuffer.base.vk.memory = VK_NULL_HANDLE;
+    vulkanSwapchain->backbuffer.base.vk.format = createInfo.imageFormat;
+    vulkanSwapchain->backbuffer.base.isSwapchainTexture = KGFX_TRUE;
+    vulkanSwapchain->backbuffer.swapchain = vulkanSwapchain;
     vulkanSwapchain->vk.surface = surface->vk.surface;
     vulkanSwapchain->vk.swapchain = vkSwapchain;
+    vulkanSwapchain->vk.images.data = images.data;
+    vulkanSwapchain->vk.images.length = images.length;
+    vulkanSwapchain->vk.imageViews.data = imageViews.data;
+    vulkanSwapchain->vk.imageViews.length = imageViews.length;
+    vulkanSwapchain->vk.imageAvailableSemaphore = vkImageAvailableSemaphore;
+    vulkanSwapchain->vk.imageIndex = 0;
 
     *pSwapchain = &vulkanSwapchain->obj;
     ++surface->referenceCount;
@@ -3007,6 +3557,12 @@ void kgfxDestroySwapchain_vulkan(KGFXSwapchain swapchain) {
         return;
     }
     
+    for (uint32_t i = 0; i < vulkanSwapchain->vk.imageViews.length; ++i) {
+        vkDestroyImageView(vulkanDevice->vk.device, vulkanSwapchain->vk.imageViews.data[i], NULL);
+    }
+
+    KGFX_LIST_FREE(vulkanSwapchain->vk.images);
+    KGFX_LIST_FREE(vulkanSwapchain->vk.imageViews);
     vkDestroySwapchainKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, NULL);
     
     --surface->referenceCount;
@@ -3017,6 +3573,12 @@ void kgfxDestroySwapchain_vulkan(KGFXSwapchain swapchain) {
         vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
         KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
     }
+}
+
+/* (medium-high) TODO: Vulkan swapchain backbuffer */
+KGFXTexture kgfxGetSwapchainBackbuffer_vulkan(KGFXSwapchain swapchain) {
+    KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) swapchain;
+    return &vulkanSwapchain->backbuffer.base.obj;
 }
 
 #endif /* #ifdef KGFX_VULKAN_IMPLEMENTATION */
@@ -3142,6 +3704,10 @@ void kgfxDestroyInstance_d3d12(KGFXInstance instance) {
     KGFXInstance_D3D12_t* d3d12Instance = (KGFXInstance_D3D12_t*) instance;
     KGFX_D3D12_CALL(d3d12Instance->factory, Release);
     free(d3d12Instance);
+}
+
+KGFXResult kgfxDebugRegisterCallback_d3d12(KGFXInstance instance, KGFXDebugCallbackPFN callback) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 KGFXResult kgfxEnumerateAdapters_d3d12(KGFXInstance instance, uint32_t adapterID, KGFXAdapterDetails* pAdapterDetails) {
@@ -3316,12 +3882,77 @@ void kgfxDestroyCommandPool_d3d12(KGFXCommandPool commandPool) {
     return;
 }
 
+/* (medium) TODO: D3D12 command list cmds */
 KGFXResult kgfxCreateCommandList_d3d12(KGFXCommandPool commandPool, KGFXCommandList* pCommandList) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 void kgfxDestroyCommandList_d3d12(KGFXCommandList commandList) {
     return;
+}
+
+void kgfxResetCommandList_d3d12(KGFXCommandList commandList) {
+    return;
+}
+
+KGFXResult kgfxOpenCommandList_d3d12(KGFXCommandList commandList, KGFXBool isOneTime) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxCloseCommandList_d3d12(KGFXCommandList commandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxSubmitCommandList_d3d12(KGFXCommandList commandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxCmdBindGraphicsPipeline_d3d12(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline) {
+    return;
+}
+
+void kgfxCmdSetViewportAndScissor_d3d12(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors) {
+    return;
+}
+
+void kgfxCmdBindRenderTargets_d3d12(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget) {
+    return;
+}
+
+void kgfxCmdBeginRendering_d3d12(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue) {
+    return;
+}
+
+void kgfxCmdEndRendering_d3d12(KGFXCommandList commandList) {
+    return;
+}
+
+void kgfxCmdBindIndexBuffer_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
+    return;
+}
+
+void kgfxCmdBindVertexBuffers_d3d12(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {
+    return;
+}
+
+void kgfxCmdDraw_d3d12(KGFXCommandList _d3d12commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {
+    return;
+}
+
+void kgfxCmdDrawIndexed_d3d12(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    return;
+}
+
+void kgfxCmdDrawIndirect_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    return;
+}
+
+void kgfxCmdDrawIndexedIndirect_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    return;
+}
+
+KGFXResult kgfxPresentSwapchain_d3d12(KGFXSwapchain swapchain) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 /* (medium) TODO: D3D12 swapchain */
@@ -3331,6 +3962,11 @@ KGFXResult kgfxCreateSwapchainWin32_d3d12(KGFXDevice device, void* hwnd, void* h
 
 void kgfxDestroySwapchain_d3d12(KGFXSwapchain swapchain) {
     return;
+}
+
+/* (medium) TODO: D3D12 swapchain backbuffer */
+KGFXTexture kgfxGetSwapchainBackbuffer_d3d12(KGFXSwapchain swapchain) {
+    return NULL;
 }
 
 #endif /* #ifdef KGFX_D3D12_IMPLEMENTATION */
@@ -3541,6 +4177,71 @@ void kgfxDestroyCommandList_metal(KGFXCommandList commandList) {
     return;
 }
 
+/* (low-medium) TODO: Metal command list cmds */
+void kgfxResetCommandList_metal(KGFXCommandList commandList) {
+    return;
+}
+
+KGFXResult kgfxOpenCommandList_metal(KGFXCommandList commandList, KGFXBool isOneTime) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxCloseCommandList_metal(KGFXCommandList commandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxSubmitCommandList_metal(KGFXCommandList commandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxCmdBindGraphicsPipeline_metal(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline) {
+    return;
+}
+
+void kgfxCmdSetViewportAndScissor_metal(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors) {
+    return;
+}
+
+void kgfxCmdBindRenderTargets_metal(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget) {
+    return;
+}
+
+void kgfxCmdBeginRendering_metal(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue) {
+    return;
+}
+
+void kgfxCmdEndRendering_metal(KGFXCommandList commandList) {
+    return;
+}
+
+void kgfxCmdBindIndexBuffer_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
+    return;
+}
+
+void kgfxCmdBindVertexBuffers_metal(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {
+    return;
+}
+
+void kgfxCmdDraw_metal(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {
+    return;
+}
+
+void kgfxCmdDrawIndexed_metal(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    return;
+}
+
+void kgfxCmdDrawIndirect_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    return;
+}
+
+void kgfxCmdDrawIndexedIndirect_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    return;
+}
+
+KGFXResult kgfxPresentSwapchain_metal(KGFXSwapchain swapchain) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
 /* (low-medium) TODO: Metal swapchain */
 KGFXResult kgfxCreateSwapchainCocoa_metal(KGFXDevice device, void* nsWindow, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
@@ -3548,6 +4249,11 @@ KGFXResult kgfxCreateSwapchainCocoa_metal(KGFXDevice device, void* nsWindow, con
 
 void kgfxDestroySwapchain_metal(KGFXSwapchain swapchain) {
     return;
+}
+
+/* (low-medium) TODO: Metal swapchain backbuffer */
+KGFXTexture kgfxGetSwapchainBackbuffer_metal(KGFXSwapchain swapchain) {
+    return NULL;
 }
 
 #endif /* #ifdef KGFX_METAL_IMPLEMENTATION */
@@ -3959,6 +4665,374 @@ void kgfxDestroyCommandList(KGFXCommandList commandList) {
     }
 }
 
+void kgfxResetCommandList(KGFXCommandList commandList) {
+    if (commandList == NULL) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxResetCommandList_vulkan(commandList);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxResetCommandList_d3d12(commandList);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxResetCommandList_metal(commandList);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+KGFXResult kgfxOpenCommandList(KGFXCommandList commandList, KGFXBool isOneTime) {
+    if (commandList == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxOpenCommandList_vulkan(commandList, isOneTime);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxOpenCommandList_d3d12(commandList, isOneTime);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxOpenCommandList_metal(commandList, isOneTime);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+KGFXResult kgfxCloseCommandList(KGFXCommandList commandList) {
+    if (commandList == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxCloseCommandList_vulkan(commandList);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxCloseCommandList_d3d12(commandList);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxCloseCommandList_metal(commandList);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+KGFXResult kgfxSubmitCommandList(KGFXCommandList commandList) {
+    if (commandList == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxSubmitCommandList_vulkan(commandList);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxSubmitCommandList_d3d12(commandList);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxSubmitCommandList_metal(commandList);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+void kgfxCmdBindGraphicsPipeline(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline) {
+    if (commandList == NULL) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindGraphicsPipeline_vulkan(commandList, pipeline);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindGraphicsPipeline_d3d12(commandList, pipeline);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindGraphicsPipeline_metal(commandList, pipeline);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdSetViewportAndScissor(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors) {
+    if (commandList == NULL || (viewportAndScissorCount != 0 && (pViewports == NULL || pScissors == NULL))) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdSetViewportAndScissor_vulkan(commandList, viewportAndScissorCount, pViewports, pScissors);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdSetViewportAndScissor_d3d12(commandList, viewportAndScissorCount, pViewports, pScissors);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdSetViewportAndScissor_metal(commandList, viewportAndScissorCount, pViewports, pScissors);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindRenderTargets(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget) {
+    if (commandList == NULL || (renderTargetCount != 0 && pRenderTargets == NULL)) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindRenderTargets_vulkan(commandList, renderTargetCount, pRenderTargets, depthStencilTarget);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindRenderTargets_d3d12(commandList, renderTargetCount, pRenderTargets, depthStencilTarget);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindRenderTargets_metal(commandList, renderTargetCount, pRenderTargets, depthStencilTarget);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBeginRendering(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue) {
+    if (commandList == NULL || (renderTargetClearValueCount != 0 && pRenderTargetClearValues == NULL)) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBeginRendering_vulkan(commandList, renderTargetClearValueCount, pRenderTargetClearValues, pDepthStencilClearValue);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBeginRendering_d3d12(commandList, renderTargetClearValueCount, pRenderTargetClearValues, pDepthStencilClearValue);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBeginRendering_metal(commandList, renderTargetClearValueCount, pRenderTargetClearValues, pDepthStencilClearValue);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdEndRendering(KGFXCommandList commandList) {
+    if (commandList == NULL) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdEndRendering_vulkan(commandList);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdEndRendering_d3d12(commandList);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdEndRendering_metal(commandList);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindIndexBuffer(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
+    if (commandList == NULL) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindIndexBuffer_vulkan(commandList, buffer, offset, indexType);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindIndexBuffer_d3d12(commandList, buffer, offset, indexType);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindIndexBuffer_metal(commandList, buffer, offset, indexType);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindVertexBuffers(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {
+    if (commandList == NULL || bindingCount == 0 || pBuffers == NULL || pOffsets == NULL) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindVertexBuffers_vulkan(commandList, firstBinding, bindingCount, pBuffers, pOffsets);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindVertexBuffers_d3d12(commandList, firstBinding, bindingCount, pBuffers, pOffsets);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindVertexBuffers_metal(commandList, firstBinding, bindingCount, pBuffers, pOffsets);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdDraw(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {
+    if (commandList == NULL || vertexCount == 0 || instanceCount == 0) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdDraw_vulkan(commandList, vertexCount, instanceCount, firstVertex, firstIndex);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdDraw_d3d12(commandList, vertexCount, instanceCount, firstVertex, firstIndex);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdDraw_metal(commandList, vertexCount, instanceCount, firstVertex, firstIndex);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdDrawIndexed(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+    if (commandList == NULL || indexCount == 0 || instanceCount == 0) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdDrawIndexed_vulkan(commandList, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdDrawIndexed_d3d12(commandList, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdDrawIndexed_metal(commandList, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdDrawIndirect(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    if (commandList == NULL || buffer == NULL || drawCount == 0 || stride == 0) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdDrawIndirect_vulkan(commandList, buffer, offset, drawCount, stride);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdDrawIndirect_d3d12(commandList, buffer, offset, drawCount, stride);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdDrawIndirect_metal(commandList, buffer, offset, drawCount, stride);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdDrawIndexedIndirect(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
+    if (commandList == NULL || drawCount == 0 || stride == 0) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdDrawIndexedIndirect_vulkan(commandList, buffer, offset, drawCount, stride);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdDrawIndexedIndirect_d3d12(commandList, buffer, offset, drawCount, stride);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdDrawIndexedIndirect_metal(commandList, buffer, offset, drawCount, stride);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+KGFXResult kgfxPresentSwapchain(KGFXSwapchain swapchain) {
+    if (swapchain == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (swapchain->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxPresentSwapchain_vulkan(swapchain);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxPresentSwapchain_d3d12(swapchain);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxPresentSwapchain_metal(swapchain);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
 KGFXResult kgfxCreateSwapchainWin32(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
 #if !(defined(_WIN32) || defined(_WIN64) || defined(__WIN32__))
     return KGFX_RESULT_ERROR_UNSUPPORTED;
@@ -4063,6 +5137,29 @@ void kgfxDestroySwapchain(KGFXSwapchain swapchain) {
 #endif /* #ifdef KGFX_METAL */
         default:
             break;
+    }
+}
+
+KGFXTexture kgfxGetSwapchainBackbuffer(KGFXSwapchain swapchain) {
+    if (swapchain == NULL) {
+        return NULL;
+    }
+
+    switch (swapchain->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxGetSwapchainBackbuffer_vulkan(swapchain);
+#endif /* #ifdef KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxGetSwapchainBackbuffer_d3d12(swapchain);
+#endif /* #ifdef KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxGetSwapchainBackbuffer_metal(swapchain);
+#endif /* #ifdef KGFX_METAL */
+        default:
+            return NULL;
     }
 }
 
