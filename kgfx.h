@@ -2352,7 +2352,26 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     vkGetDeviceQueue(device->vk.device, cmpIndexBest, 0, &device->vk.computeQueue);
     vkGetDeviceQueue(device->vk.device, trnIndexBest, 0, &device->vk.transferQueue);
     vkGetDeviceQueue(device->vk.device, genericIndexBest, 0, &device->vk.genericQueue);
-    
+
+    VkQueue uniqueQueues[4];
+    uint32_t uniqueQueueCount = 0;
+    uniqueQueues[uniqueQueueCount++] = device->vk.graphicsQueue;
+    if (device->vk.computeQueueIndex != device->vk.graphicsQueueIndex) {
+        uniqueQueues[uniqueQueueCount++] = device->vk.computeQueue;
+    }
+
+    if (device->vk.transferQueueIndex != device->vk.graphicsQueueIndex && device->vk.transferQueueIndex != device->vk.computeQueueIndex) {
+        uniqueQueues[uniqueQueueCount++] = device->vk.transferQueue;
+    }
+
+    if (device->vk.genericQueueIndex != device->vk.graphicsQueueIndex && device->vk.genericQueueIndex != device->vk.computeQueueIndex && device->vk.genericQueueIndex != device->vk.transferQueueIndex) {
+        uniqueQueues[uniqueQueueCount++] = device->vk.genericQueue;
+    }
+
+    for (uint32_t i = 0; i < uniqueQueueCount; ++i) {
+        kgfx_vulkan_debugNameObjectPrintf(device, VK_OBJECT_TYPE_QUEUE, uniqueQueues[i], "KGFX Queue %u %s%c%c%c", i, (uniqueQueues[i] == device->vk.genericQueue) ? "Generic " : "", (uniqueQueues[i] == device->vk.graphicsQueue) ? 'G' : ' ', (uniqueQueues[i] == device->vk.computeQueue) ? 'C' : ' ', (uniqueQueues[i] == device->vk.transferQueue) ? 'T' : ' ');
+    }
+
     kgfx_vulkan_debugNameObjectPrintf(device, VK_OBJECT_TYPE_DEVICE, device->vk.device, "KGFX Logical Device %u", vulkanInstance->vk.currentDeviceID++);
     
     *pDevice = &device->obj;
