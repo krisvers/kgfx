@@ -330,6 +330,20 @@ typedef enum KGFXResourceType {
     /* TODO: multipass rendering KGFX_RESOURCE_TYPE_INPUT_ATTACHMENT */
 } KGFXResourceType;
 
+typedef enum KGFXBufferUsage {
+    KGFX_BUFFER_USAGE_VERTEX_BUFFER = 1,
+    KGFX_BUFFER_USAGE_INDEX_BUFFER = 2,
+    KGFX_BUFFER_USAGE_UNIFORM_BUFFER = 4,
+    KGFX_BUFFER_USAGE_STORAGE_BUFFER = 8,
+    KGFX_BUFFER_USAGE_INDIRECT_BUFFER = 16,
+    KGFX_BUFFER_USAGE_TRANSFER_SRC = 32,
+    KGFX_BUFFER_USAGE_TRANSFER_DST = 64,
+
+    KGFX_BUFFER_USAGE_VERTEX_BUFFER_INDEX_BUFFER = KGFX_BUFFER_USAGE_VERTEX_BUFFER | KGFX_BUFFER_USAGE_INDEX_BUFFER,
+    KGFX_BUFFER_USAGE_UNIFORM_BUFFER_STORAGE_BUFFER = KGFX_BUFFER_USAGE_UNIFORM_BUFFER | KGFX_BUFFER_USAGE_STORAGE_BUFFER,
+    KGFX_BUFFER_USAGE_TRANSFER_ALL = KGFX_BUFFER_USAGE_TRANSFER_SRC | KGFX_BUFFER_USAGE_TRANSFER_DST,
+} KGFXBufferUsage;
+
 typedef enum KGFXIndexType {
     KGFX_INDEX_TYPE_U16 = 1,
     KGFX_INDEX_TYPE_U32 = 2,
@@ -529,6 +543,10 @@ KGFX_API KGFXResult kgfxDebugRegisterCallback(KGFXInstance instance, KGFXDebugCa
 KGFX_API KGFXResult kgfxEnumerateAdapters(KGFXInstance instance, uint32_t adapterID, KGFXAdapterDetails* pAdapterDetails);
 KGFX_API KGFXResult kgfxCreateDevice(KGFXInstance instance, uint32_t adapterID, KGFXDevice* pDevice);
 KGFX_API void kgfxDestroyDevice(KGFXDevice device);
+
+/* TODO: implement buffers */
+KGFX_API KGFXResult kgfxCreateBuffer(KGFXDevice device, uint64_t size, KGFXBufferUsage usage, KGFXBuffer* pBuffer);
+KGFX_API void kgfxDestroyBuffer(KGFXBuffer buffer);
 
 KGFX_API KGFXResult kgfxCreateShaderSPIRV(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFX_API KGFXResult kgfxCreateShaderDXBC(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
@@ -849,6 +867,19 @@ typedef struct KGFXDevice_Vulkan_t {
     } vk;
 } KGFXDevice_Vulkan_t;
 
+typedef struct KGFXBuffer_Vulkan_t {
+    KGFXObject obj;
+    KGFXDevice device;
+    
+    uint64_t size;
+    KGFXBufferUsage usage;
+    
+    struct {
+        VkBuffer buffer;
+        VkDeviceMemory memory;
+    } vk;
+} KGFXBuffer_Vulkan_t;
+
 typedef struct KGFXTexture_Vulkan_t {
     KGFXObject obj;
     KGFXDevice device;
@@ -879,6 +910,8 @@ typedef struct KGFXSwapchain_Vulkan_t {
     KGFXDevice device;
 
     KGFXSwapchainTexture_Vulkan_t backbuffer;
+    KGFXSwapchainTexture_Vulkan_t* currentBackbuffer;
+    KGFX_LIST(KGFXSwapchainTexture_Vulkan_t) internalBackbuffers;
     
     struct {
         VkSwapchainKHR swapchain;
@@ -1734,8 +1767,7 @@ void kgfx_vulkan_debugNameObjectPrintf(KGFXDevice_Vulkan_t* vulkanDevice, VkObje
     }
 }
 
-KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchainTexture_Vulkan_t* backbuffer) {
-    KGFXSwapchain_Vulkan_t* vulkanSwapchain = backbuffer->swapchain;
+KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchain_Vulkan_t* vulkanSwapchain) {
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
 
     VkResult result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, VK_NULL_HANDLE, &vulkanSwapchain->vk.imageIndex);
@@ -1744,8 +1776,7 @@ KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchainTexture_Vulkan_t* back
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    backbuffer->base.vk.image = vulkanSwapchain->vk.images.data[vulkanSwapchain->vk.imageIndex];
-    backbuffer->base.vk.imageView = vulkanSwapchain->vk.imageViews.data[vulkanSwapchain->vk.imageIndex];
+    vulkanSwapchain->currentBackbuffer = &vulkanSwapchain->internalBackbuffers.data[vulkanSwapchain->vk.imageIndex];
     return KGFX_RESULT_SUCCESS;
 }
 
@@ -3300,12 +3331,15 @@ void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTa
     for (uint32_t i = 0; i < vulkanCommandList->bound.renderTargets.length; ++i) {
         KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanCommandList->bound.renderTargets.data[i];
         if (vulkanTexture->isSwapchainTexture) {
-            KGFXResult result = kgfx_vulkan_acquireSwapchainImage((KGFXSwapchainTexture_Vulkan_t*) vulkanTexture);
+            KGFXSwapchainTexture_Vulkan_t* vulkanSwapchainTexture = (KGFXSwapchainTexture_Vulkan_t*) vulkanTexture;
+            KGFXResult result = kgfx_vulkan_acquireSwapchainImage(vulkanSwapchainTexture->swapchain);
             if (result != KGFX_RESULT_SUCCESS) {
                 KGFX_LIST_FREE(clearValues);
                 KGFX_LIST_FREE(attachments);
                 return;
             }
+
+            vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanSwapchainTexture->swapchain->currentBackbuffer;
         }
 
         attachments.data[i] = vulkanTexture->vk.imageView;
@@ -3346,6 +3380,11 @@ void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList) {
     
     for (uint32_t i = 0; i < vulkanCommandList->bound.graphicsPipeline->renderTargetDescs.length; ++i) {
         KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanCommandList->bound.renderTargets.data[i];
+        if (vulkanTexture->isSwapchainTexture) {
+            KGFXSwapchainTexture_Vulkan_t* vulkanSwapchainTexture = (KGFXSwapchainTexture_Vulkan_t*) vulkanTexture;
+            vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanSwapchainTexture->swapchain->currentBackbuffer;
+        }
+
         kgfx_vulkan_vkImageLayout(vulkanCommandList->bound.graphicsPipeline->renderTargetDescs.data[i].finalLayout, &vulkanTexture->vk.layout);
     }
 }
@@ -3359,7 +3398,8 @@ void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t first
 }
 
 void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    vkCmdDraw(vulkanCommandList->vk.commandBuffer, vertexCount, instanceCount, firstVertex, firstIndex);
 }
 
 void kgfxCmdDrawIndexed_vulkan(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
@@ -3551,6 +3591,24 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
     vulkanSwapchain->backbuffer.base.vk.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     vulkanSwapchain->backbuffer.base.isSwapchainTexture = KGFX_TRUE;
     vulkanSwapchain->backbuffer.swapchain = vulkanSwapchain;
+    KGFX_LIST_INIT(vulkanSwapchain->internalBackbuffers, pSwapchainDesc->imageCount, KGFXSwapchainTexture_Vulkan_t);
+    for (uint32_t i = 0; i < vulkanSwapchain->internalBackbuffers.length; ++i) {
+        vulkanSwapchain->internalBackbuffers.data[i].base.obj.api = KGFX_INSTANCE_API_VULKAN;
+        vulkanSwapchain->internalBackbuffers.data[i].base.obj.instance = vulkanDevice->obj.instance;
+        vulkanSwapchain->internalBackbuffers.data[i].base.device = &vulkanDevice->obj;
+        vulkanSwapchain->internalBackbuffers.data[i].base.format = pSwapchainDesc->format;
+        vulkanSwapchain->internalBackbuffers.data[i].base.width = pSwapchainDesc->width;
+        vulkanSwapchain->internalBackbuffers.data[i].base.height = pSwapchainDesc->height;
+        vulkanSwapchain->internalBackbuffers.data[i].base.layers = 1;
+        vulkanSwapchain->internalBackbuffers.data[i].base.vk.image = images.data[i];
+        vulkanSwapchain->internalBackbuffers.data[i].base.vk.imageView = imageViews.data[i];
+        vulkanSwapchain->internalBackbuffers.data[i].base.vk.memory = VK_NULL_HANDLE;
+        vulkanSwapchain->internalBackbuffers.data[i].base.vk.format = createInfo.imageFormat;
+        vulkanSwapchain->internalBackbuffers.data[i].base.vk.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        vulkanSwapchain->internalBackbuffers.data[i].base.isSwapchainTexture = KGFX_TRUE;
+        vulkanSwapchain->internalBackbuffers.data[i].swapchain = vulkanSwapchain;
+    }
+
     vulkanSwapchain->vk.surface = surface->vk.surface;
     vulkanSwapchain->vk.swapchain = vkSwapchain;
     vulkanSwapchain->vk.images.data = images.data;
