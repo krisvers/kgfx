@@ -803,6 +803,9 @@ typedef struct KGFXInstance_Vulkan_t {
         
         VkInstance instance;        
         KGFX_LIST(VkPhysicalDevice) physicalDevices;
+
+        uint32_t currentDeviceID;
+        uint32_t currentSurfaceID;
     } vk;
     
 #ifdef __APPLE__
@@ -834,6 +837,15 @@ typedef struct KGFXDevice_Vulkan_t {
         uint32_t computeQueueIndex;
         uint32_t transferQueueIndex;
         uint32_t genericQueueIndex;
+
+        uint32_t currentShaderID;
+        uint32_t currentRenderPassID;
+        uint32_t currentFramebufferID;
+        uint32_t currentDescriptorSetLayoutID;
+        uint32_t currentPipelineLayoutID;
+        uint32_t currentGraphicsPipelineID;
+        uint32_t currentCommandPoolID;
+        uint32_t currentSwapchainID;
     } vk;
 } KGFXDevice_Vulkan_t;
 
@@ -1681,8 +1693,44 @@ void kgfx_vulkan_debugNameObject(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType
         nameInfo.objectType = type;
         nameInfo.objectHandle = (uint64_t) handle;
         nameInfo.pObjectName = name;
-        
+
         vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+    }
+}
+
+void kgfx_vulkan_debugNameObjectWithID(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType type, void* handle, const char* name, uint32_t id) {
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    if (vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT != NULL) {
+        VkDebugUtilsObjectNameInfoEXT nameInfo;
+        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        nameInfo.pNext = NULL;
+        nameInfo.objectType = type;
+        nameInfo.objectHandle = (uint64_t) handle;
+
+        char buffer[256];
+        snprintf(buffer, 256, "%s %u", name, id);
+        nameInfo.pObjectName = buffer;
+        vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+    }
+}
+
+void kgfx_vulkan_debugNameObjectPrintf(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType type, void* handle, const char* fmt, ...) {
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    if (vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT != NULL) {
+        VkDebugUtilsObjectNameInfoEXT nameInfo;
+        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        nameInfo.pNext = NULL;
+        nameInfo.objectType = type;
+        nameInfo.objectHandle = (uint64_t) handle;
+
+        char buffer[256];
+
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buffer, 256, fmt, args);
+        nameInfo.pObjectName = buffer;
+        vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+        va_end(args);
     }
 }
 
@@ -1701,33 +1749,88 @@ KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchainTexture_Vulkan_t* back
     return KGFX_RESULT_SUCCESS;
 }
 
-void kgfx_vulkan_transitionTexture(KGFXCommandList_Vulkan_t* pCommandList, KGFXTexture_Vulkan_t* pTexture, VkImageLayout layout, VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage) {
+void kgfx_vulkan_transitionTexture(KGFXCommandList_Vulkan_t* vulkanCommandList, KGFXTexture_Vulkan_t* vulkanTexture, VkImageLayout layout, VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage) {
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanTexture->device;
+    VkCommandPool vkPool = NULL;
+    VkCommandBuffer vkBuffer = NULL;
+    if (vulkanCommandList == NULL) {
+        VkCommandPoolCreateInfo createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        createInfo.pNext = NULL;
+        createInfo.flags = 0;
+        createInfo.queueFamilyIndex = vulkanDevice->vk.genericQueueIndex;
+
+        vkCreateCommandPool(vulkanDevice->vk.device, &createInfo, NULL, &vkPool);
+        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_COMMAND_POOL, vkPool, "KGFX Temporary Texture Transition Command Pool");
+
+        VkCommandBufferAllocateInfo allocInfo;
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.pNext = NULL;
+        allocInfo.commandPool = vkPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+
+        vkAllocateCommandBuffers(vulkanDevice->vk.device, &allocInfo, &vkBuffer);
+        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_COMMAND_POOL, vkPool, "KGFX Temporary Texture Transition Command Buffer");
+
+        VkCommandBufferBeginInfo beginInfo;
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.pNext = NULL;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        beginInfo.pInheritanceInfo = NULL;
+
+        vkBeginCommandBuffer(vkBuffer, &beginInfo);
+    } else {
+        vkBuffer = vulkanCommandList->vk.commandBuffer;
+    }
+
     VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
     barrier.srcAccessMask = srcAccess;
     barrier.dstAccessMask = dstAccess;
-    barrier.oldLayout = pTexture->vk.layout;
+    barrier.oldLayout = vulkanTexture->vk.layout;
     barrier.newLayout = layout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = pTexture->vk.image;
+    barrier.image = vulkanTexture->vk.image;
     barrier.subresourceRange.aspectMask = 0;
-    if (pTexture->format == KGFX_FORMAT_D16_UNORM || pTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT || pTexture->format == KGFX_FORMAT_D32_FLOAT) {
+    if (vulkanTexture->format == KGFX_FORMAT_D16_UNORM || vulkanTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT || vulkanTexture->format == KGFX_FORMAT_D32_FLOAT) {
         barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
     } else {
         barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_COLOR_BIT;
     }
-    
-    if (pTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT) {
+
+    if (vulkanTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT) {
         barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
     }
-    
+
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = pTexture->layers;
-    
-    vkCmdPipelineBarrier(pCommandList->vk.commandBuffer, srcStage, dstStage, 0, 0, NULL, 0, NULL, 1, &barrier);
-    pTexture->vk.layout = layout;
+    barrier.subresourceRange.layerCount = vulkanTexture->layers;
+
+    vkCmdPipelineBarrier(vkBuffer, srcStage, dstStage, 0, 0, NULL, 0, NULL, 1, &barrier);
+    vulkanTexture->vk.layout = layout;
+
+    if (vulkanCommandList == NULL) {
+        vkEndCommandBuffer(vkBuffer);
+
+        VkSubmitInfo submitInfo;
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.pNext = NULL;
+        submitInfo.waitSemaphoreCount = 0;
+        submitInfo.pWaitSemaphores = NULL;
+        submitInfo.pWaitDstStageMask = NULL;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &vkBuffer;
+        submitInfo.signalSemaphoreCount = 0;
+        submitInfo.pSignalSemaphores = NULL;
+
+        vkQueueSubmit(vulkanDevice->vk.genericQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(vulkanDevice->vk.genericQueue);
+
+        vkFreeCommandBuffers(vulkanDevice->vk.device, vkPool, 1, &vkBuffer);
+        vkDestroyCommandPool(vulkanDevice->vk.device, vkPool, NULL);
+    }
 }
 
 KGFXResult kgfxCreateInstance_vulkan(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
@@ -1860,6 +1963,8 @@ KGFXResult kgfxCreateInstance_vulkan(KGFXInstanceCreateFlagBits flags, KGFXInsta
         vkDestroyInstance(vkInstance, NULL);
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    memset(instance, 0, sizeof(KGFXInstance_Vulkan_t));
     
     instance->obj.api = KGFX_INSTANCE_API_VULKAN;
     instance->flags = flags;
@@ -2224,13 +2329,14 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     createInfo.ppEnabledLayerNames = actualLayers.data;
     
     KGFXDevice_Vulkan_t* device = (KGFXDevice_Vulkan_t*) malloc(sizeof(KGFXDevice_Vulkan_t));
+    memset(device, 0, sizeof(KGFXDevice_Vulkan_t));
+
     VkResult result = vkCreateDevice(vkPhysicalDevice, &createInfo, NULL, &device->vk.device);
     
     KGFX_LIST_FREE(requestedLayerList);
     KGFX_LIST_FREE(requestedExtensionList);
     KGFX_LIST_FREE(actualLayers);
     KGFX_LIST_FREE(actualExtensions);
-    
     if (result != VK_SUCCESS) {
         free(device);
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
@@ -2247,7 +2353,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     vkGetDeviceQueue(device->vk.device, trnIndexBest, 0, &device->vk.transferQueue);
     vkGetDeviceQueue(device->vk.device, genericIndexBest, 0, &device->vk.genericQueue);
     
-    kgfx_vulkan_debugNameObject(device, VK_OBJECT_TYPE_DEVICE, device->vk.device, "KGFX Logical Device");
+    kgfx_vulkan_debugNameObjectPrintf(device, VK_OBJECT_TYPE_DEVICE, device->vk.device, "KGFX Logical Device %u", vulkanInstance->vk.currentDeviceID++);
     
     *pDevice = &device->obj;
     return KGFX_RESULT_SUCCESS;
@@ -2273,12 +2379,16 @@ KGFXResult kgfxCreateShaderSPIRV_vulkan(KGFXDevice device, const void* pData, ui
     if (vkCreateShaderModule(vulkanDevice->vk.device, &createInfo, NULL, &vkShader) != VK_SUCCESS) {
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SHADER_MODULE, vkShader, "KGFX Shader Module %u", vulkanDevice->vk.currentShaderID++);
     
     KGFXShader_Vulkan_t* vulkanShader = (KGFXShader_Vulkan_t*) malloc(sizeof(KGFXShader_Vulkan_t));
     if (vulkanShader == NULL) {
         vkDestroyShaderModule(vulkanDevice->vk.device, vkShader, NULL);
         return KGFX_RESULT_ERROR_UNKNOWN;
     }
+
+    memset(vulkanShader, 0, sizeof(KGFXShader_Vulkan_t));
     
     vulkanShader->obj.api = KGFX_INSTANCE_API_VULKAN;
     vulkanShader->obj.instance = device->instance;
@@ -2719,6 +2829,8 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_RENDER_PASS, vkRenderPass, "KGFX Render Pass %u", vulkanDevice->vk.currentRenderPassID++);
+
     VkFramebufferAttachmentsCreateInfo framebufferAttachmentsCreateInfo;
     framebufferAttachmentsCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO_KHR;
     framebufferAttachmentsCreateInfo.pNext = NULL;
@@ -2741,6 +2853,9 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_FRAMEBUFFER, vkFramebuffer, "KGFX Framebuffer %u", vulkanDevice->vk.currentFramebufferID++);
+    KGFX_LIST_FREE(framebufferAttachmentImageInfos);
     
     KGFX_LIST(VkDescriptorSetLayoutBinding) descSetLayoutBindings;
     KGFX_LIST_INIT(descSetLayoutBindings, pPipelineDesc->uniformSignatureDesc.uniformCount, VkDescriptorSetLayoutBinding);
@@ -2778,6 +2893,8 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, vkDescLayout, "KGFX Descriptor Set Layout %u", vulkanDevice->vk.currentDescriptorSetLayoutID++);
     
     VkPipelineLayoutCreateInfo layoutCreateInfo;
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -2793,6 +2910,8 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_PIPELINE_LAYOUT, vkPipelineLayout, "KGFX Pipeline Layout %u", vulkanDevice->vk.currentPipelineLayoutID++);
     
     VkPipelineMultisampleStateCreateInfo msCreateInfo;
     msCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -2832,12 +2951,16 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_PIPELINE, vkPipeline, "KGFX Graphics Pipeline %u", vulkanDevice->vk.currentGraphicsPipelineID++);
     
     KGFXGraphicsPipeline_Vulkan_t* vulkanPipeline = (KGFXGraphicsPipeline_Vulkan_t*) malloc(sizeof(KGFXGraphicsPipeline_Vulkan_t));
     if (vulkanPipeline == NULL) {
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    memset(vulkanPipeline, 0, sizeof(KGFXGraphicsPipeline_Vulkan_t));
     
     vulkanPipeline->obj.api = KGFX_INSTANCE_API_VULKAN;
     vulkanPipeline->obj.instance = device->instance;
@@ -2916,6 +3039,8 @@ KGFXResult kgfxCreateCommandPool_vulkan(KGFXDevice device, uint32_t maxCommandLi
         vkDestroyCommandPool(vulkanDevice->vk.device, vkCommandPool, NULL);
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    memset(commandPool, 0, sizeof(KGFXCommandPool_Vulkan_t));
     
     commandPool->obj.api = KGFX_INSTANCE_API_VULKAN;
     commandPool->obj.instance = device->instance;
@@ -2959,7 +3084,7 @@ KGFXResult kgfxCreateCommandList_vulkan(KGFXCommandPool commandPool, KGFXCommand
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, vkCommandBuffer, "KGFX Command List");
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, vkCommandBuffer, "KGFX Command List %u", vulkanCommandPool->currentListCount++);
     
     VkFenceCreateInfo fenceCreateInfo;
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -2970,12 +3095,16 @@ KGFXResult kgfxCreateCommandList_vulkan(KGFXCommandPool commandPool, KGFXCommand
     if (vkCreateFence(vulkanDevice->vk.device, &fenceCreateInfo, NULL, &vkInUseFence) != VK_SUCCESS) {
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_FENCE, vkInUseFence, "KGFX Command List In Use Fence for Command List %u", vulkanCommandPool->currentListCount - 1);
     
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) malloc(sizeof(KGFXCommandList_Vulkan_t));
     if (vulkanCommandList == NULL) {
         vkFreeCommandBuffers(vulkanDevice->vk.device, vulkanCommandPool->vk.commandPool, 1, &vkCommandBuffer);
         return KGFX_RESULT_ERROR_UNKNOWN;
     }
+
+    memset(vulkanCommandList, 0, sizeof(KGFXCommandList_Vulkan_t));
     
     ++vulkanCommandPool->currentListCount;
     
@@ -3230,8 +3359,6 @@ KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
     KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) swapchain;
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
     
-    kgfx_vulkan_transitionTexture(NULL, &vulkanSwapchain->backbuffer.base, VK_IMAGE_LAYOUT_PRES, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    
     VkPresentInfoKHR presentInfo;
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.pNext = NULL;
@@ -3290,7 +3417,7 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Win32 Swapchain");
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Swapchain %u", vulkanDevice->vk.currentSwapchainID++);
 
     KGFX_LIST(VkImage) images = { NULL, 0 };
     KGFX_LIST_INIT(images, pSwapchainDesc->imageCount, VkImage);
@@ -3351,17 +3478,8 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
 
-        char viewBuffer[64] = "KGFX Swapchain Image View ";
-        char imageBuffer[64] = "KGFX Swapchain Image ";
-
-        size_t viewLength = strlen(viewBuffer);
-        size_t imageLength = strlen(imageBuffer);
-
-        snprintf(viewBuffer + viewLength, sizeof(viewBuffer) - viewLength, "%u", i);
-        snprintf(imageBuffer + imageLength, sizeof(imageBuffer) - imageLength, "%u", i);
-
-        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE_VIEW, imageViews.data[i], viewBuffer);
-        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE, images.data[i], imageBuffer);
+        kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_IMAGE_VIEW, imageViews.data[i], "KGFX Swapchain Image View %u for Swapchain %u", i, vulkanDevice->vk.currentSwapchainID - 1);
+        kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_IMAGE, images.data[i], "KGFX Swapchain Image %u for Swapchain %u", i, vulkanDevice->vk.currentSwapchainID - 1);
     }
 
     VkSemaphoreCreateInfo semaphoreCreateInfo;
@@ -3381,6 +3499,8 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SEMAPHORE, vkImageAvailableSemaphore, "KGFX Swapchain Image Available Semaphore for Swapchain %u", vulkanDevice->vk.currentSwapchainID - 1);
+
     KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) malloc(sizeof(KGFXSwapchain_Vulkan_t));
     if (vulkanSwapchain == NULL) {
         vkDestroySemaphore(vulkanDevice->vk.device, vkImageAvailableSemaphore, NULL);
@@ -3392,6 +3512,8 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
         vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
+
+    memset(vulkanSwapchain, 0, sizeof(KGFXSwapchain_Vulkan_t));
 
     vulkanSwapchain->obj.api = KGFX_INSTANCE_API_VULKAN;
     vulkanSwapchain->obj.instance = vulkanDevice->obj.instance;
@@ -3455,6 +3577,8 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
         if (vkCreateWin32SurfaceKHR(vulkanInstance->vk.instance, &createInfo, NULL, &vkSurface) != VK_SUCCESS) {
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
+
+        kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SURFACE_KHR, vkSurface, "KGFX Win32 Surface %u", vulkanInstance->surfaces.length);
 
         KGFX_Vulkan_Surface_t surf;
         surf.vk.surface = vkSurface;

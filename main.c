@@ -29,7 +29,7 @@ typedef struct Vertex {
 } Vertex;
 
 void debugCallbackKGFX(KGFXInstance instance, KGFXDebugSeverity severity, KGFXDebugSource source, const char* message) {
-    // TODO: printf("[KGFX] %s\n", message);
+    printf("[KGFX] %s\n", message);
 }
 
 KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
