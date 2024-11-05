@@ -21,7 +21,7 @@ foreach (_variableName ${_variableNames})
 endforeach()
 
 # Add source to this project's executable.
-add_executable(kgfx "main.c" "kgfx.h" "kgfx.c" "kgfx.cpp" "kgfx.m" "common.h")
+add_executable(kgfx "main.c" "kgfx.h" "kgfx_c.c" "kgfx_cpp.cpp" "kgfx_objc.m" "common.h")
 
 include_directories(${Vulkan_INCLUDE_DIRS})
 target_link_directories(kgfx PRIVATE ${Vulkan_LIBRARY})

@@ -10,7 +10,13 @@
 #elif defined(__APPLE__)
 #define GLFW_EXPOSE_NATIVE_COCOA
 #define KGFX_COCOA
-#endif /* #ifdef WIN32 */
+#endif /* #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__) */
+
+#ifdef KGFX_WIN32
+#include <Windows.h>
+#else
+#include <unistd.h>
+#endif /* #ifdef KGFX_WIN32 */
 
 #include "kgfx.h"
 #include <stdio.h>
@@ -23,7 +29,7 @@ typedef struct Vertex {
 } Vertex;
 
 void debugCallbackKGFX(KGFXInstance instance, KGFXDebugSeverity severity, KGFXDebugSource source, const char* message) {
-    printf("[KGFX] %s\n", message);
+    // TODO: printf("[KGFX] %s\n", message);
 }
 
 KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
@@ -278,84 +284,101 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         kgfxDestroyInstance(instance);
         return result;
     }
-
-    result = kgfxOpenCommandList(commandList, KGFX_FALSE);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to open command list\n");
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
-        return result;
-    }
-
-    kgfxCmdBindGraphicsPipeline(commandList, pipeline);
-
-    KGFXViewport viewport;
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float) swapchainDesc.width;
-    viewport.height = (float) swapchainDesc.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    KGFXScissor scissor;
-    scissor.x = 0;
-    scissor.y = 0;
-    scissor.width = swapchainDesc.width;
-    scissor.height = swapchainDesc.height;
-
-    kgfxCmdSetViewportAndScissor(commandList, 1, &viewport, &scissor);
-    kgfxCmdBindRenderTargets(commandList, 1, &backbuffer, NULL);
-
-    KGFXClearValue clearValue;
-    clearValue.type = KGFX_CLEAR_VALUE_TYPE_F32;
-    clearValue.value.f32[0] = 1.0f;
-    clearValue.value.f32[1] = 0.0f;
-    clearValue.value.f32[2] = 1.0f;
-    clearValue.value.f32[3] = 1.0f;
-
-    kgfxCmdBeginRendering(commandList, 1, &clearValue, NULL);
-
-    kgfxCmdDraw(commandList, 3, 1, 0, 0);
-
-    kgfxCmdEndRendering(commandList);
-    result = kgfxCloseCommandList(commandList);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to close command list\n");
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
-        return result;
-    }
-
-    result = kgfxSubmitCommandList(commandList);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to submit command list\n");
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
-        return result;
-    }
-
-    kgfxPresentSwapchain(swapchain);
     
     while (!glfwWindowShouldClose(window)) {
+        result = kgfxOpenCommandList(commandList, KGFX_FALSE);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to open command list\n");
+            kgfxDestroyCommandList(commandList);
+            kgfxDestroyCommandPool(commandPool);
+            kgfxDestroyGraphicsPipeline(pipeline);
+            kgfxDestroyShader(fragmentShader);
+            kgfxDestroyShader(vertexShader);
+            kgfxDestroySwapchain(swapchain);
+            kgfxDestroyDevice(device);
+            kgfxDestroyInstance(instance);
+            return result;
+        }
+
+        kgfxCmdBindGraphicsPipeline(commandList, pipeline);
+
+        KGFXViewport viewport;
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = (float) swapchainDesc.width;
+        viewport.height = (float) swapchainDesc.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        KGFXScissor scissor;
+        scissor.x = 0;
+        scissor.y = 0;
+        scissor.width = swapchainDesc.width;
+        scissor.height = swapchainDesc.height;
+
+        kgfxCmdSetViewportAndScissor(commandList, 1, &viewport, &scissor);
+        kgfxCmdBindRenderTargets(commandList, 1, &backbuffer, NULL);
+
+        KGFXClearValue clearValue;
+        clearValue.type = KGFX_CLEAR_VALUE_TYPE_F32;
+        clearValue.value.f32[0] = 1.0f;
+        clearValue.value.f32[1] = 0.0f;
+        clearValue.value.f32[2] = 1.0f;
+        clearValue.value.f32[3] = 1.0f;
+
+        kgfxCmdBeginRendering(commandList, 1, &clearValue, NULL);
+
+        kgfxCmdDraw(commandList, 3, 1, 0, 0);
+
+        kgfxCmdEndRendering(commandList);
+        result = kgfxCloseCommandList(commandList);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to close command list\n");
+            kgfxDestroyCommandList(commandList);
+            kgfxDestroyCommandPool(commandPool);
+            kgfxDestroyGraphicsPipeline(pipeline);
+            kgfxDestroyShader(fragmentShader);
+            kgfxDestroyShader(vertexShader);
+            kgfxDestroySwapchain(swapchain);
+            kgfxDestroyDevice(device);
+            kgfxDestroyInstance(instance);
+            return result;
+        }
+
+        result = kgfxSubmitCommandList(commandList);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to submit command list\n");
+            kgfxDestroyCommandList(commandList);
+            kgfxDestroyCommandPool(commandPool);
+            kgfxDestroyGraphicsPipeline(pipeline);
+            kgfxDestroyShader(fragmentShader);
+            kgfxDestroyShader(vertexShader);
+            kgfxDestroySwapchain(swapchain);
+            kgfxDestroyDevice(device);
+            kgfxDestroyInstance(instance);
+            return result;
+        }
+
+        result = kgfxPresentSwapchain(swapchain);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to present swapchain\n");
+            kgfxDestroyCommandList(commandList);
+            kgfxDestroyCommandPool(commandPool);
+            kgfxDestroyGraphicsPipeline(pipeline);
+            kgfxDestroyShader(fragmentShader);
+            kgfxDestroyShader(vertexShader);
+            kgfxDestroySwapchain(swapchain);
+            kgfxDestroyDevice(device);
+            kgfxDestroyInstance(instance);
+            return result;
+        }
+        
         glfwPollEvents();
+#ifdef KGFX_WIN32
+        Sleep(2);
+#else
+        usleep(2000);
+#endif /* #ifdef KGFX_WIN32 */
     }
     
     kgfxDestroyCommandList(commandList);

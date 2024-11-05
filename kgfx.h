@@ -899,6 +899,9 @@ typedef struct KGFXGraphicsPipeline_Vulkan_t {
     uint32_t framebufferHeight;
     uint32_t framebufferLayers;
     
+    KGFX_LIST(KGFXRenderTargetDesc) renderTargetDescs;
+    KGFXDepthStencilDesc depthStencilDesc;
+    
     struct {
         VkDescriptorSetLayout descLayout;
         VkRenderPass renderPass;
@@ -929,6 +932,7 @@ typedef struct KGFXCommandList_Vulkan_t {
     
     struct {
         VkCommandBuffer commandBuffer;
+        VkFence inUseFence;
     } vk;
 
     struct {
@@ -978,25 +982,6 @@ typedef KGFX_LIST(const char*) KGFX_Vulkan_ActualLayerList_t;
     memcpy((void*) list_.data[index_].name, name_, strlen(name_) + 1); \
     list_.data[index_++].isNecessary = necessary_;
 #define KGFX_ADD_LAYER(list_, index_, name_, necessary_) KGFX_ADD_EXTENSION(list_, index_, name_, necessary_)
-
-/* (highest) TODO: transtiion */
-void kgfx_vulkan_transitionTexture(KGFXCommandList_Vulkan_t* pCommandList, KGFXTexture_Vulkan_t* pTexture, VkImageLayout layout) {
-    VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = 0;
-    barrier.oldLayout = pTexture->vk.layout;
-    barrier.newLayout = layout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = pTexture->vk.image;
-    barrier.subresourceRange.aspectMask = (pTexture->format == KGFX_FORMAT_D32_FLOAT || pTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT || pTexture->format == KGFX_FORMAT_D16_UNORM) ? VK_IMAGE_ASPECT_DEPTH : VK_IMAGE_ASPECT_COLOR;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = pTexture->layers;
-    vkCmdPipelineBarrier(pCommandList->vk.commandBuffer, , VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
-    pTexture->vk.layout = layout;
-}
 
 KGFXResult kgfx_vulkan_getExtensions(VkPhysicalDevice vkPhysicalDevice, KGFX_Vulkan_ExtensionRequestList_t requestedExtensionList, KGFX_Vulkan_ActualExtensionList_t* pList) {
     KGFX_LIST(VkExtensionProperties) vkExtensionProperties = { NULL, 0 };
@@ -1704,9 +1689,9 @@ void kgfx_vulkan_debugNameObject(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType
 KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchainTexture_Vulkan_t* backbuffer) {
     KGFXSwapchain_Vulkan_t* vulkanSwapchain = backbuffer->swapchain;
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
-    
+
     VkResult result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, VK_NULL_HANDLE, &vulkanSwapchain->vk.imageIndex);
-    if (result != VK_SUCCESS) {
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
@@ -1714,7 +1699,35 @@ KGFXResult kgfx_vulkan_acquireSwapchainImage(KGFXSwapchainTexture_Vulkan_t* back
     backbuffer->base.vk.image = vulkanSwapchain->vk.images.data[vulkanSwapchain->vk.imageIndex];
     backbuffer->base.vk.imageView = vulkanSwapchain->vk.imageViews.data[vulkanSwapchain->vk.imageIndex];
     return KGFX_RESULT_SUCCESS;
+}
 
+void kgfx_vulkan_transitionTexture(KGFXCommandList_Vulkan_t* pCommandList, KGFXTexture_Vulkan_t* pTexture, VkImageLayout layout, VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage) {
+    VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    barrier.oldLayout = pTexture->vk.layout;
+    barrier.newLayout = layout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = pTexture->vk.image;
+    barrier.subresourceRange.aspectMask = 0;
+    if (pTexture->format == KGFX_FORMAT_D16_UNORM || pTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT || pTexture->format == KGFX_FORMAT_D32_FLOAT) {
+        barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+    } else {
+        barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+    
+    if (pTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT) {
+        barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = pTexture->layers;
+    
+    vkCmdPipelineBarrier(pCommandList->vk.commandBuffer, srcStage, dstStage, 0, 0, NULL, 0, NULL, 1, &barrier);
+    pTexture->vk.layout = layout;
 }
 
 KGFXResult kgfxCreateInstance_vulkan(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
@@ -2832,6 +2845,19 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
     vulkanPipeline->framebufferWidth = pPipelineDesc->framebufferWidth;
     vulkanPipeline->framebufferHeight = pPipelineDesc->framebufferHeight;
     vulkanPipeline->framebufferLayers = pPipelineDesc->framebufferLayers;
+    if (pPipelineDesc->renderTargetCount == 0) {
+        KGFX_LIST_ZERO(vulkanPipeline->renderTargetDescs);
+    } else {
+        KGFX_LIST_INIT(vulkanPipeline->renderTargetDescs, pPipelineDesc->renderTargetCount, KGFXRenderTargetDesc);
+        memcpy(vulkanPipeline->renderTargetDescs.data, pPipelineDesc->pRenderTargetDescs, pPipelineDesc->renderTargetCount * sizeof(KGFXRenderTargetDesc));
+    }
+    
+    if (pPipelineDesc->depthStencilDesc.format == KGFX_FORMAT_UNKNOWN) {
+        memset(&vulkanPipeline->depthStencilDesc, 0, sizeof(KGFXDepthStencilDesc));
+    } else {
+        memcpy(&vulkanPipeline->depthStencilDesc, &pPipelineDesc->depthStencilDesc, sizeof(KGFXDepthStencilDesc));
+    }
+    
     vulkanPipeline->vk.descLayout = vkDescLayout;
     vulkanPipeline->vk.pipelineLayout = vkPipelineLayout;
     vulkanPipeline->vk.renderPass = vkRenderPass;
@@ -2876,7 +2902,7 @@ KGFXResult kgfxCreateCommandPool_vulkan(KGFXDevice device, uint32_t maxCommandLi
     VkCommandPoolCreateInfo createInfo;
     createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     createInfo.pNext = NULL;
-    createInfo.flags = 0;
+    createInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     createInfo.queueFamilyIndex = queueFamilyIndex;
     
     VkCommandPool vkCommandPool;
@@ -2935,16 +2961,29 @@ KGFXResult kgfxCreateCommandList_vulkan(KGFXCommandPool commandPool, KGFXCommand
     
     kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, vkCommandBuffer, "KGFX Command List");
     
+    VkFenceCreateInfo fenceCreateInfo;
+    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceCreateInfo.pNext = NULL;
+    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    
+    VkFence vkInUseFence;
+    if (vkCreateFence(vulkanDevice->vk.device, &fenceCreateInfo, NULL, &vkInUseFence) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) malloc(sizeof(KGFXCommandList_Vulkan_t));
     if (vulkanCommandList == NULL) {
         vkFreeCommandBuffers(vulkanDevice->vk.device, vulkanCommandPool->vk.commandPool, 1, &vkCommandBuffer);
         return KGFX_RESULT_ERROR_UNKNOWN;
     }
     
+    ++vulkanCommandPool->currentListCount;
+    
     vulkanCommandList->obj.api = KGFX_INSTANCE_API_VULKAN;
     vulkanCommandList->obj.instance = vulkanDevice->obj.instance;
     vulkanCommandList->commandPool = commandPool;
     vulkanCommandList->vk.commandBuffer = vkCommandBuffer;
+    vulkanCommandList->vk.inUseFence = vkInUseFence;
     memset(&vulkanCommandList->bound, 0, sizeof(vulkanCommandList->bound));
     
     *pCommandList = &vulkanCommandList->obj;
@@ -2955,6 +2994,8 @@ void kgfxDestroyCommandList_vulkan(KGFXCommandList commandList) {
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
     KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    vkWaitForFences(vulkanDevice->vk.device, 1, &vulkanCommandList->vk.inUseFence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(vulkanDevice->vk.device, vulkanCommandList->vk.inUseFence, NULL);
     vkFreeCommandBuffers(vulkanDevice->vk.device, vulkanCommandPool->vk.commandPool, 1, &vulkanCommandList->vk.commandBuffer);
     free(commandList);
     --vulkanCommandPool->currentListCount;
@@ -2970,6 +3011,10 @@ void kgfxResetCommandList_vulkan(KGFXCommandList commandList) {
 
 KGFXResult kgfxOpenCommandList_vulkan(KGFXCommandList commandList, KGFXBool isOneTime) {
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    vkWaitForFences(vulkanDevice->vk.device, 1, &vulkanCommandList->vk.inUseFence, VK_TRUE, UINT64_MAX);
+    
     VkCommandBufferBeginInfo beginInfo;
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.pNext = NULL;
@@ -3001,6 +3046,10 @@ KGFXResult kgfxSubmitCommandList_vulkan(KGFXCommandList commandList) {
     KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
     
+    if (vkResetFences(vulkanDevice->vk.device, 1, &vulkanCommandList->vk.inUseFence) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
     /* TODO: Vulkan proper sync */
     VkSubmitInfo submitInfo;
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -3013,7 +3062,7 @@ KGFXResult kgfxSubmitCommandList_vulkan(KGFXCommandList commandList) {
     submitInfo.signalSemaphoreCount = 0;
     submitInfo.pSignalSemaphores = NULL;
     
-    if (vkQueueSubmit(vulkanCommandPool->vk.queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+    if (vkQueueSubmit(vulkanCommandPool->vk.queue, 1, &submitInfo, vulkanCommandList->vk.inUseFence) != VK_SUCCESS) {
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
@@ -3069,7 +3118,7 @@ void kgfxCmdBindRenderTargets_vulkan(KGFXCommandList commandList, uint32_t rende
 void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue) {
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
     KGFX_LIST(VkClearValue) clearValues = { NULL, 0 };
-    KGFX_LIST_INIT(clearValues, renderTargetClearValueCount + (pDepthStencilClearValue != NULL) ? 1 : 0, VkClearValue);
+    KGFX_LIST_INIT(clearValues, renderTargetClearValueCount + ((pDepthStencilClearValue != NULL) ? 1 : 0), VkClearValue);
 
     for (uint32_t i = 0; i < renderTargetClearValueCount; ++i) {
         switch (pRenderTargetClearValues[i].type) {
@@ -3099,7 +3148,7 @@ void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTa
     }
 
     KGFX_LIST(VkImageView) attachments = { NULL, 0 };
-    KGFX_LIST_INIT(attachments, vulkanCommandList->bound.renderTargets.length + (vulkanCommandList->bound.depthStencilTarget != NULL) ? 1 : 0, VkImageView);
+    KGFX_LIST_INIT(attachments, vulkanCommandList->bound.renderTargets.length + ((vulkanCommandList->bound.depthStencilTarget != NULL) ? 1 : 0), VkImageView);
     for (uint32_t i = 0; i < vulkanCommandList->bound.renderTargets.length; ++i) {
         KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanCommandList->bound.renderTargets.data[i];
         if (vulkanTexture->isSwapchainTexture) {
@@ -3112,6 +3161,7 @@ void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTa
         }
 
         attachments.data[i] = vulkanTexture->vk.imageView;
+        kgfx_vulkan_transitionTexture(vulkanCommandList, vulkanTexture, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     }
 
     if (vulkanCommandList->bound.depthStencilTarget != NULL) {
@@ -3138,11 +3188,18 @@ void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTa
     beginInfo.pClearValues = clearValues.data;
 
     vkCmdBeginRenderPass(vulkanCommandList->vk.commandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    KGFX_LIST_FREE(clearValues);
+    KGFX_LIST_FREE(attachments);
 }
 
 void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList) {
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
     vkCmdEndRenderPass(vulkanCommandList->vk.commandBuffer);
+    
+    for (uint32_t i = 0; i < vulkanCommandList->bound.graphicsPipeline->renderTargetDescs.length; ++i) {
+        KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanCommandList->bound.renderTargets.data[i];
+        kgfx_vulkan_vkImageLayout(vulkanCommandList->bound.graphicsPipeline->renderTargetDescs.data[i].finalLayout, &vulkanTexture->vk.layout);
+    }
 }
 
 void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
@@ -3170,7 +3227,201 @@ void kgfxCmdDrawIndexedIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer b
 }
 
 KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) swapchain;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
+    
+    kgfx_vulkan_transitionTexture(NULL, &vulkanSwapchain->backbuffer.base, VK_IMAGE_LAYOUT_PRES, 0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    
+    VkPresentInfoKHR presentInfo;
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.pNext = NULL;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &vulkanSwapchain->vk.imageAvailableSemaphore;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &vulkanSwapchain->vk.swapchain;
+    presentInfo.pImageIndices = &vulkanSwapchain->vk.imageIndex;
+    presentInfo.pResults = NULL;
+    
+    VkResult result = vkQueuePresentKHR(vulkanDevice->vk.genericQueue, &presentInfo);
+    if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUCCESS) {
+        vkQueueWaitIdle(vulkanDevice->vk.genericQueue);
+        return KGFX_RESULT_SUCCESS;
+    }
+    
+    return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+}
+
+KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_Vulkan_Surface_t* surface, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
+    VkSwapchainCreateInfoKHR createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.pNext = NULL;
+    createInfo.flags = 0;
+    createInfo.surface = surface->vk.surface;
+    createInfo.minImageCount = pSwapchainDesc->imageCount;
+    if (!kgfx_vulkan_vkFormat(pSwapchainDesc->format, &createInfo.imageFormat)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    createInfo.imageExtent.width = pSwapchainDesc->width;
+    createInfo.imageExtent.height = pSwapchainDesc->height;
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.queueFamilyIndexCount = 0;
+    createInfo.pQueueFamilyIndices = NULL;
+    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (!kgfx_vulkan_vkPresentMode(pSwapchainDesc->presentMode, &createInfo.presentMode)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (createInfo.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    createInfo.clipped = VK_TRUE;
+    createInfo.oldSwapchain = NULL;
+
+    VkSwapchainKHR vkSwapchain;
+    if (vkCreateSwapchainKHR(vulkanDevice->vk.device, &createInfo, NULL, &vkSwapchain) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Win32 Swapchain");
+
+    KGFX_LIST(VkImage) images = { NULL, 0 };
+    KGFX_LIST_INIT(images, pSwapchainDesc->imageCount, VkImage);
+
+    if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, NULL) != VK_SUCCESS) {
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (images.length != pSwapchainDesc->imageCount) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
+        }
+
+        KGFX_LIST_FREE(images);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, images.data) != VK_SUCCESS) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
+        }
+
+        KGFX_LIST_FREE(images);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    KGFX_LIST(VkImageView) imageViews = { NULL, 0 };
+    KGFX_LIST_INIT(imageViews, images.length, VkImageView);
+
+    for (uint32_t i = 0; i < images.length; ++i) {
+        VkImageViewCreateInfo imageViewCreateInfo;
+        imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        imageViewCreateInfo.pNext = NULL;
+        imageViewCreateInfo.flags = 0;
+        imageViewCreateInfo.image = images.data[i];
+        imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        imageViewCreateInfo.format = createInfo.imageFormat;
+        imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+        imageViewCreateInfo.subresourceRange.levelCount = 1;
+        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+        imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(vulkanDevice->vk.device, &imageViewCreateInfo, NULL, &imageViews.data[i]) != VK_SUCCESS) {
+            for (uint32_t j = 0; j < i; ++j) {
+                vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[j], NULL);
+            }
+            KGFX_LIST_FREE(images);
+            KGFX_LIST_FREE(imageViews);
+            vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+
+        char viewBuffer[64] = "KGFX Swapchain Image View ";
+        char imageBuffer[64] = "KGFX Swapchain Image ";
+
+        size_t viewLength = strlen(viewBuffer);
+        size_t imageLength = strlen(imageBuffer);
+
+        snprintf(viewBuffer + viewLength, sizeof(viewBuffer) - viewLength, "%u", i);
+        snprintf(imageBuffer + imageLength, sizeof(imageBuffer) - imageLength, "%u", i);
+
+        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE_VIEW, imageViews.data[i], viewBuffer);
+        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE, images.data[i], imageBuffer);
+    }
+
+    VkSemaphoreCreateInfo semaphoreCreateInfo;
+    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphoreCreateInfo.pNext = NULL;
+    semaphoreCreateInfo.flags = 0;
+
+    VkSemaphore vkImageAvailableSemaphore;
+    if (vkCreateSemaphore(vulkanDevice->vk.device, &semaphoreCreateInfo, NULL, &vkImageAvailableSemaphore) != VK_SUCCESS) {
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[i], NULL);
+        }
+
+        KGFX_LIST_FREE(images);
+        KGFX_LIST_FREE(imageViews);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) malloc(sizeof(KGFXSwapchain_Vulkan_t));
+    if (vulkanSwapchain == NULL) {
+        vkDestroySemaphore(vulkanDevice->vk.device, vkImageAvailableSemaphore, NULL);
+        for (uint32_t i = 0; i < images.length; ++i) {
+            vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[i], NULL);
+        }
+        KGFX_LIST_FREE(images);
+        KGFX_LIST_FREE(imageViews);
+        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    vulkanSwapchain->obj.api = KGFX_INSTANCE_API_VULKAN;
+    vulkanSwapchain->obj.instance = vulkanDevice->obj.instance;
+    vulkanSwapchain->device = &vulkanDevice->obj;
+    vulkanSwapchain->backbuffer.base.obj.api = KGFX_INSTANCE_API_VULKAN;
+    vulkanSwapchain->backbuffer.base.obj.instance = vulkanDevice->obj.instance;
+    vulkanSwapchain->backbuffer.base.device = &vulkanDevice->obj;
+    vulkanSwapchain->backbuffer.base.format = pSwapchainDesc->format;
+    vulkanSwapchain->backbuffer.base.width = pSwapchainDesc->width;
+    vulkanSwapchain->backbuffer.base.height = pSwapchainDesc->height;
+    vulkanSwapchain->backbuffer.base.layers = 1;
+    vulkanSwapchain->backbuffer.base.vk.image = VK_NULL_HANDLE;
+    vulkanSwapchain->backbuffer.base.vk.imageView = VK_NULL_HANDLE;
+    vulkanSwapchain->backbuffer.base.vk.memory = VK_NULL_HANDLE;
+    vulkanSwapchain->backbuffer.base.vk.format = createInfo.imageFormat;
+    vulkanSwapchain->backbuffer.base.vk.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    vulkanSwapchain->backbuffer.base.isSwapchainTexture = KGFX_TRUE;
+    vulkanSwapchain->backbuffer.swapchain = vulkanSwapchain;
+    vulkanSwapchain->vk.surface = surface->vk.surface;
+    vulkanSwapchain->vk.swapchain = vkSwapchain;
+    vulkanSwapchain->vk.images.data = images.data;
+    vulkanSwapchain->vk.images.length = images.length;
+    vulkanSwapchain->vk.imageViews.data = imageViews.data;
+    vulkanSwapchain->vk.imageViews.length = imageViews.length;
+    vulkanSwapchain->vk.imageAvailableSemaphore = vkImageAvailableSemaphore;
+    vulkanSwapchain->vk.imageIndex = 0;
+
+    *pSwapchain = &vulkanSwapchain->obj;
+    ++surface->referenceCount;
+    return KGFX_RESULT_SUCCESS;
 }
 
 #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)
@@ -3220,188 +3471,15 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
             KGFX_LIST_APPEND(vulkanInstance->surfaces, surf, KGFX_Vulkan_Surface_t);
         }
         surface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
-}
-
-    VkSwapchainCreateInfoKHR createInfo;
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.pNext = NULL;
-    createInfo.flags = 0;
-    createInfo.surface = surface->vk.surface;
-    createInfo.minImageCount = pSwapchainDesc->imageCount;
-    if (!kgfx_vulkan_vkFormat(pSwapchainDesc->format, &createInfo.imageFormat)) {
-        /* TODO: crash out safely */
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
-    createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    createInfo.imageExtent.width = pSwapchainDesc->width;
-    createInfo.imageExtent.height = pSwapchainDesc->height;
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createInfo.queueFamilyIndexCount = 0;
-    createInfo.pQueueFamilyIndices = NULL;
-    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    if (!kgfx_vulkan_vkPresentMode(pSwapchainDesc->presentMode, &createInfo.presentMode)) {
-        /* TODO: crash out safely */
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
-    if (createInfo.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
-    }
-
-    createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = NULL;
-
-    VkSwapchainKHR vkSwapchain;
-    if (vkCreateSwapchainKHR(vulkanDevice->vk.device, &createInfo, NULL, &vkSwapchain) != VK_SUCCESS) {
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Win32 Swapchain");
-
-    KGFX_LIST(VkImage) images = { NULL, 0 };
-    KGFX_LIST_INIT(images, pSwapchainDesc->imageCount, VkImage);
-
-    if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, NULL) != VK_SUCCESS) {
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
+    KGFXResult result = kgfx_createSwapchain_vulkan(vulkanDevice, surface, pSwapchainDesc, pSwapchain);
+    if (result != KGFX_RESULT_SUCCESS) {
         vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
         KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        return result;
     }
-
-    if (images.length != pSwapchainDesc->imageCount) {
-        for (uint32_t i = 0; i < images.length; ++i) {
-            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
-        }
-
-        KGFX_LIST_FREE(images);
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
-    if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, images.data) != VK_SUCCESS) {
-        for (uint32_t i = 0; i < images.length; ++i) {
-            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
-        }
-
-        KGFX_LIST_FREE(images);
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
-    KGFX_LIST(VkImageView) imageViews = { NULL, 0 };
-    KGFX_LIST_INIT(imageViews, images.length, VkImageView);
-
-    for (uint32_t i = 0; i < images.length; ++i) {
-        VkImageViewCreateInfo imageViewCreateInfo;
-        imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        imageViewCreateInfo.pNext = NULL;
-        imageViewCreateInfo.flags = 0;
-        imageViewCreateInfo.image = images.data[i];
-        imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        imageViewCreateInfo.format = createInfo.imageFormat;
-        imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
-        imageViewCreateInfo.subresourceRange.levelCount = 1;
-        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-        imageViewCreateInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(vulkanDevice->vk.device, &imageViewCreateInfo, NULL, &imageViews.data[i]) != VK_SUCCESS) {
-            for (uint32_t j = 0; j < i; ++j) {
-                vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[j], NULL);
-            }
-            KGFX_LIST_FREE(images);
-            KGFX_LIST_FREE(imageViews);
-            vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-            vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-            KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-        }
-
-        char viewBuffer[64] = "KGFX Swapchain Image View ";
-        char imageBuffer[64] = "KGFX Swapchain Image ";
-
-        size_t viewLength = strlen(viewBuffer);
-        size_t imageLength = strlen(imageBuffer);
-
-        snprintf(viewBuffer + viewLength, sizeof(viewBuffer) - viewLength, "%u", i);
-        snprintf(imageBuffer + imageLength, sizeof(imageBuffer) - imageLength, "%u", i);
-
-        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE_VIEW, imageViews.data[i], viewBuffer);
-        kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_IMAGE, images.data[i], imageBuffer);
-    }
-
-    VkSemaphoreCreateInfo semaphoreCreateInfo;
-    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphoreCreateInfo.pNext = NULL;
-    semaphoreCreateInfo.flags = 0;
-
-    VkSemaphore vkImageAvailableSemaphore;
-    if (vkCreateSemaphore(vulkanDevice->vk.device, &semaphoreCreateInfo, NULL, &vkImageAvailableSemaphore) != VK_SUCCESS) {
-        for (uint32_t i = 0; i < images.length; ++i) {
-            vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[i], NULL);
-        }
-
-        KGFX_LIST_FREE(images);
-        KGFX_LIST_FREE(imageViews);
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
-    KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) malloc(sizeof(KGFXSwapchain_Vulkan_t));
-    if (vulkanSwapchain == NULL) {
-        for (uint32_t i = 0; i < images.length; ++i) {
-            vkDestroyImageView(vulkanDevice->vk.device, imageViews.data[i], NULL);
-        }
-        KGFX_LIST_FREE(images);
-        KGFX_LIST_FREE(imageViews);
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
-    vulkanSwapchain->obj.api = KGFX_INSTANCE_API_VULKAN;
-    vulkanSwapchain->obj.instance = device->instance;
-    vulkanSwapchain->device = device;
-    vulkanSwapchain->backbuffer.base.obj.api = KGFX_INSTANCE_API_VULKAN;
-    vulkanSwapchain->backbuffer.base.obj.instance = device->instance;
-    vulkanSwapchain->backbuffer.base.device = device;
-    vulkanSwapchain->backbuffer.base.format = pSwapchainDesc->format;
-    vulkanSwapchain->backbuffer.base.vk.image = VK_NULL_HANDLE;
-    vulkanSwapchain->backbuffer.base.vk.imageView = VK_NULL_HANDLE;
-    vulkanSwapchain->backbuffer.base.vk.memory = VK_NULL_HANDLE;
-    vulkanSwapchain->backbuffer.base.vk.format = createInfo.imageFormat;
-    vulkanSwapchain->backbuffer.base.isSwapchainTexture = KGFX_TRUE;
-    vulkanSwapchain->backbuffer.swapchain = vulkanSwapchain;
-    vulkanSwapchain->vk.surface = surface->vk.surface;
-    vulkanSwapchain->vk.swapchain = vkSwapchain;
-    vulkanSwapchain->vk.images.data = images.data;
-    vulkanSwapchain->vk.images.length = images.length;
-    vulkanSwapchain->vk.imageViews.data = imageViews.data;
-    vulkanSwapchain->vk.imageViews.length = imageViews.length;
-    vulkanSwapchain->vk.imageAvailableSemaphore = vkImageAvailableSemaphore;
-    vulkanSwapchain->vk.imageIndex = 0;
-
-    *pSwapchain = &vulkanSwapchain->obj;
-    ++surface->referenceCount;
+    
     return KGFX_RESULT_SUCCESS;
 }
 #endif /* #if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__) */
@@ -3474,65 +3552,13 @@ KGFXResult kgfxCreateSwapchainCocoa_vulkan(KGFXDevice device, void* nsWindow, co
         surface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
     }
     
-    VkSwapchainCreateInfoKHR createInfo;
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.pNext = NULL;
-    createInfo.flags = 0;
-    createInfo.surface = surface->vk.surface;
-    createInfo.minImageCount = pSwapchainDesc->imageCount;
-    if (!kgfx_vulkan_vkFormat(pSwapchainDesc->format, &createInfo.imageFormat)) {
-        /* TODO: crash out safely */
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
-    createInfo.imageExtent = (VkExtent2D) { pSwapchainDesc->width, pSwapchainDesc->height };
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createInfo.queueFamilyIndexCount = 0;
-    createInfo.pQueueFamilyIndices = NULL;
-    createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    if (!kgfx_vulkan_vkPresentMode(pSwapchainDesc->presentMode, &createInfo.presentMode)) {
-        /* TODO: crash out safely */
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    if (createInfo.presentMode == VK_PRESENT_MODE_MAX_ENUM_KHR) {
+    KGFXResult result = kgfx_createSwapchain_vulkan(vulkanDevice, surface, pSwapchainDesc, pSwapchain);
+    if (result != KGFX_RESULT_SUCCESS) {
         vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
         KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+        return result;
     }
     
-    createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = NULL;
-    
-    VkSwapchainKHR vkSwapchain;
-    if (vkCreateSwapchainKHR(vulkanDevice->vk.device, &createInfo, NULL, &vkSwapchain) != VK_SUCCESS) {
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Cocoa Swapchain");
-    
-    KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) malloc(sizeof(KGFXSwapchain_Vulkan_t));
-    if (vulkanSwapchain == NULL) {
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
-        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    vulkanSwapchain->obj.api = KGFX_INSTANCE_API_VULKAN;
-    vulkanSwapchain->obj.instance = device->instance;
-    vulkanSwapchain->device = device;
-    vulkanSwapchain->vk.surface = surface->vk.surface;
-    vulkanSwapchain->vk.swapchain = vkSwapchain;
-    
-    *pSwapchain = &vulkanSwapchain->obj;
-    ++surface->referenceCount;
     return KGFX_RESULT_SUCCESS;
 }
 
@@ -3557,6 +3583,7 @@ void kgfxDestroySwapchain_vulkan(KGFXSwapchain swapchain) {
         return;
     }
     
+    vkDeviceWaitIdle(vulkanDevice->vk.device);
     for (uint32_t i = 0; i < vulkanSwapchain->vk.imageViews.length; ++i) {
         vkDestroyImageView(vulkanDevice->vk.device, vulkanSwapchain->vk.imageViews.data[i], NULL);
     }
@@ -3564,6 +3591,7 @@ void kgfxDestroySwapchain_vulkan(KGFXSwapchain swapchain) {
     KGFX_LIST_FREE(vulkanSwapchain->vk.images);
     KGFX_LIST_FREE(vulkanSwapchain->vk.imageViews);
     vkDestroySwapchainKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, NULL);
+    vkDestroySemaphore(vulkanDevice->vk.device, vulkanSwapchain->vk.imageAvailableSemaphore, NULL);
     
     --surface->referenceCount;
     if (surface->referenceCount == 0) {
