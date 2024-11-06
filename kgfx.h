@@ -556,6 +556,9 @@ KGFX_API void kgfxDestroyDevice(KGFXDevice device);
 KGFX_API KGFXResult kgfxCreateBuffer(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer);
 KGFX_API void kgfxDestroyBuffer(KGFXBuffer buffer);
 
+KGFX_API KGFXResult kgfxUploadBuffer(KGFXBuffer buffer, const void* pData, uint64_t size);
+KGFX_API KGFXResult kgfxDownloadBuffer(KGFXBuffer buffer, void* pData, uint64_t size);
+
 KGFX_API KGFXResult kgfxMapBuffer(KGFXBuffer buffer, void** ppData);
 KGFX_API void kgfxUnmapBuffer(KGFXBuffer buffer);
 
@@ -2620,6 +2623,18 @@ void kgfxUnmapBuffer_vulkan(KGFXBuffer buffer) {
     vulkanBuffer->mapped = KGFX_FALSE;
 }
 
+KGFXResult kgfxUploadBuffer_vulkan(KGFXBuffer buffer, const void* pData, uint64_t size) {
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanBuffer->device;
+    
+    
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult kgfxDownloadBuffer_vulkan(KGFXBuffer buffer, void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
 KGFXResult kgfxCreateShaderSPIRV_vulkan(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
     
@@ -4302,6 +4317,14 @@ void kgfxUnmapBuffer_d3d12(KGFXBuffer buffer) {
     return;
 }
 
+KGFXResult kgfxUploadBuffer_d3d12(KGFXBuffer buffer, const void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxDownloadBuffer_d3d12(KGFXBuffer buffer, void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
 /* (medium) TODO: D3D12 shaders */
 KGFXResult kgfxCreateShaderSPIRV_d3d12(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
@@ -4604,6 +4627,14 @@ KGFXResult kgfxMapBuffer_metal(KGFXBuffer buffer, void** ppData) {
 
 void kgfxUnmapBuffer_metal(KGFXBuffer buffer) {
     return;
+}
+
+KGFXResult kgfxUploadBuffer_metal(KGFXBuffer buffer, const void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxDownloadBuffer_metal(KGFXBuffer buffer, void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 /* (low-medium) TODO: Metal shaders */
@@ -4975,6 +5006,52 @@ void kgfxUnmapBuffer(KGFXBuffer buffer) {
 #endif /* KGFX_METAL */
         default:
             break;
+    }
+}
+
+KGFXResult kgfxUploadBuffer(KGFXBuffer buffer, const void* pData, uint64_t size) {
+    if (buffer == NULL || pData == NULL || size == 0) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (buffer->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxUploadBuffer_vulkan(buffer, pData, size);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxUploadBuffer_d3d12(buffer, pData, size);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxUploadBuffer_metal(buffer, pData, size);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+KGFXResult kgfxDownloadBuffer(KGFXBuffer buffer, void* pData, uint64_t size) {
+    if (buffer == NULL || pData == NULL || size == 0) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (buffer->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxDownloadBuffer_vulkan(buffer, pData, size);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxDownloadBuffer_d3d12(buffer, pData, size);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxDownloadBuffer_metal(buffer, pData, size);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
 }
 
