@@ -292,7 +292,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     };
 
     KGFXBuffer vertexBuffer;
-    result = kgfxCreateBuffer(device, sizeof(vertices), KGFX_BUFFER_USAGE_VERTEX_BUFFER, KGFX_RESOURCE_LOCATION_HOST, &vertexBuffer);
+    result = kgfxCreateBuffer(device, sizeof(vertices), KGFX_BUFFER_USAGE_VERTEX_BUFFER | KGFX_BUFFER_USAGE_TRANSFER_DST, KGFX_RESOURCE_LOCATION_DEVICE, &vertexBuffer);
     if (result != KGFX_RESULT_SUCCESS) {
         printf("Failed to create vertex buffer\n");
         kgfxDestroyCommandList(commandList);
@@ -306,10 +306,9 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         return result;
     }
 
-    void* mappedData;
-    result = kgfxMapBuffer(vertexBuffer, &mappedData);
+    result = kgfxUploadBuffer(vertexBuffer, vertices, sizeof(vertices));
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to map vertex buffer\n");
+        printf("Failed to upload to vertex buffer\n");
         kgfxDestroyBuffer(vertexBuffer);
         kgfxDestroyCommandList(commandList);
         kgfxDestroyCommandPool(commandPool);
@@ -321,8 +320,6 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         kgfxDestroyInstance(instance);
         return result;
     }
-    memcpy(mappedData, vertices, sizeof(vertices));
-    kgfxUnmapBuffer(vertexBuffer);
     
     while (!glfwWindowShouldClose(window)) {
         result = kgfxOpenCommandList(commandList, KGFX_FALSE);
