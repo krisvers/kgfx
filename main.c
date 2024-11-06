@@ -135,41 +135,32 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     KGFXTexture backbuffer = kgfxGetSwapchainBackbuffer(swapchain);
     
     const uint32_t vertexShaderSPIRV[] = {
-        0x07230203,0x00010000,0x0008000b,0x00000028,0x00000000,0x00020011,0x00000001,0x0006000b,
+        0x07230203,0x00010000,0x0008000b,0x0000001b,0x00000000,0x00020011,0x00000001,0x0006000b,
         0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-        0x0007000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x00000019,0x0000001d,0x00030003,
-        0x00000002,0x000001c2,0x00040005,0x00000004,0x6e69616d,0x00000000,0x00050005,0x0000000c,
-        0x69736f70,0x6e6f6974,0x00000073,0x00060005,0x00000017,0x505f6c67,0x65567265,0x78657472,
-        0x00000000,0x00060006,0x00000017,0x00000000,0x505f6c67,0x7469736f,0x006e6f69,0x00070006,
-        0x00000017,0x00000001,0x505f6c67,0x746e696f,0x657a6953,0x00000000,0x00070006,0x00000017,
-        0x00000002,0x435f6c67,0x4470696c,0x61747369,0x0065636e,0x00070006,0x00000017,0x00000003,
-        0x435f6c67,0x446c6c75,0x61747369,0x0065636e,0x00030005,0x00000019,0x00000000,0x00060005,
-        0x0000001d,0x565f6c67,0x65747265,0x646e4978,0x00007865,0x00050048,0x00000017,0x00000000,
-        0x0000000b,0x00000000,0x00050048,0x00000017,0x00000001,0x0000000b,0x00000001,0x00050048,
-        0x00000017,0x00000002,0x0000000b,0x00000003,0x00050048,0x00000017,0x00000003,0x0000000b,
-        0x00000004,0x00030047,0x00000017,0x00000002,0x00040047,0x0000001d,0x0000000b,0x0000002a,
-        0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,
-        0x00040017,0x00000007,0x00000006,0x00000002,0x00040015,0x00000008,0x00000020,0x00000000,
-        0x0004002b,0x00000008,0x00000009,0x00000003,0x0004001c,0x0000000a,0x00000007,0x00000009,
-        0x00040020,0x0000000b,0x00000007,0x0000000a,0x0004002b,0x00000006,0x0000000d,0x00000000,
-        0x0004002b,0x00000006,0x0000000e,0x3f000000,0x0005002c,0x00000007,0x0000000f,0x0000000d,
-        0x0000000e,0x0004002b,0x00000006,0x00000010,0xbf000000,0x0005002c,0x00000007,0x00000011,
-        0x00000010,0x00000010,0x0005002c,0x00000007,0x00000012,0x0000000e,0x00000010,0x0006002c,
-        0x0000000a,0x00000013,0x0000000f,0x00000011,0x00000012,0x00040017,0x00000014,0x00000006,
-        0x00000004,0x0004002b,0x00000008,0x00000015,0x00000001,0x0004001c,0x00000016,0x00000006,
-        0x00000015,0x0006001e,0x00000017,0x00000014,0x00000006,0x00000016,0x00000016,0x00040020,
-        0x00000018,0x00000003,0x00000017,0x0004003b,0x00000018,0x00000019,0x00000003,0x00040015,
-        0x0000001a,0x00000020,0x00000001,0x0004002b,0x0000001a,0x0000001b,0x00000000,0x00040020,
-        0x0000001c,0x00000001,0x0000001a,0x0004003b,0x0000001c,0x0000001d,0x00000001,0x00040020,
-        0x0000001f,0x00000007,0x00000007,0x0004002b,0x00000006,0x00000022,0x3f800000,0x00040020,
-        0x00000026,0x00000003,0x00000014,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,
-        0x000200f8,0x00000005,0x0004003b,0x0000000b,0x0000000c,0x00000007,0x0003003e,0x0000000c,
-        0x00000013,0x0004003d,0x0000001a,0x0000001e,0x0000001d,0x00050041,0x0000001f,0x00000020,
-        0x0000000c,0x0000001e,0x0004003d,0x00000007,0x00000021,0x00000020,0x00050051,0x00000006,
-        0x00000023,0x00000021,0x00000000,0x00050051,0x00000006,0x00000024,0x00000021,0x00000001,
-        0x00070050,0x00000014,0x00000025,0x00000023,0x00000024,0x0000000d,0x00000022,0x00050041,
-        0x00000026,0x00000027,0x00000019,0x0000001b,0x0003003e,0x00000027,0x00000025,0x000100fd,
-        0x00010038
+        0x0007000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00000012,0x00030003,
+        0x00000002,0x000001c2,0x00040005,0x00000004,0x6e69616d,0x00000000,0x00060005,0x0000000b,
+        0x505f6c67,0x65567265,0x78657472,0x00000000,0x00060006,0x0000000b,0x00000000,0x505f6c67,
+        0x7469736f,0x006e6f69,0x00070006,0x0000000b,0x00000001,0x505f6c67,0x746e696f,0x657a6953,
+        0x00000000,0x00070006,0x0000000b,0x00000002,0x435f6c67,0x4470696c,0x61747369,0x0065636e,
+        0x00070006,0x0000000b,0x00000003,0x435f6c67,0x446c6c75,0x61747369,0x0065636e,0x00030005,
+        0x0000000d,0x00000000,0x00050005,0x00000012,0x6f506e69,0x69746973,0x00006e6f,0x00050048,
+        0x0000000b,0x00000000,0x0000000b,0x00000000,0x00050048,0x0000000b,0x00000001,0x0000000b,
+        0x00000001,0x00050048,0x0000000b,0x00000002,0x0000000b,0x00000003,0x00050048,0x0000000b,
+        0x00000003,0x0000000b,0x00000004,0x00030047,0x0000000b,0x00000002,0x00040047,0x00000012,
+        0x0000001e,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,
+        0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040015,0x00000008,
+        0x00000020,0x00000000,0x0004002b,0x00000008,0x00000009,0x00000001,0x0004001c,0x0000000a,
+        0x00000006,0x00000009,0x0006001e,0x0000000b,0x00000007,0x00000006,0x0000000a,0x0000000a,
+        0x00040020,0x0000000c,0x00000003,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000003,
+        0x00040015,0x0000000e,0x00000020,0x00000001,0x0004002b,0x0000000e,0x0000000f,0x00000000,
+        0x00040017,0x00000010,0x00000006,0x00000003,0x00040020,0x00000011,0x00000001,0x00000010,
+        0x0004003b,0x00000011,0x00000012,0x00000001,0x0004002b,0x00000006,0x00000014,0x3f800000,
+        0x00040020,0x00000019,0x00000003,0x00000007,0x00050036,0x00000002,0x00000004,0x00000000,
+        0x00000003,0x000200f8,0x00000005,0x0004003d,0x00000010,0x00000013,0x00000012,0x00050051,
+        0x00000006,0x00000015,0x00000013,0x00000000,0x00050051,0x00000006,0x00000016,0x00000013,
+        0x00000001,0x00050051,0x00000006,0x00000017,0x00000013,0x00000002,0x00070050,0x00000007,
+        0x00000018,0x00000015,0x00000016,0x00000017,0x00000014,0x00050041,0x00000019,0x0000001a,
+        0x0000000d,0x0000000f,0x0003003e,0x0000001a,0x00000018,0x000100fd,0x00010038
     };
     
     const uint32_t fragmentShaderSPIRV[] = {
@@ -237,9 +228,9 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     pipelineDesc.fillMode = KGFX_FILL_MODE_FILL;
     pipelineDesc.topology = KGFX_TOPOLOGY_TRIANGLES;
     pipelineDesc.viewportAndScissorCount = 1;
-    pipelineDesc.vertexInputDesc.bindingCount = 0;
+    pipelineDesc.vertexInputDesc.bindingCount = 1;
     pipelineDesc.vertexInputDesc.pBindings = &bindingDesc;
-    pipelineDesc.vertexInputDesc.attributeCount = 0;
+    pipelineDesc.vertexInputDesc.attributeCount = 1;
     pipelineDesc.vertexInputDesc.pAttributes = &attributeDesc;
     pipelineDesc.shaderCount = 2;
     pipelineDesc.pShaders = shaders;
@@ -293,11 +284,51 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         kgfxDestroyInstance(instance);
         return result;
     }
+
+    Vertex vertices[] = {
+        { 0.0f, 0.5f, 0.0f },
+        { 0.5f, -0.5f, 0.0f },
+        { -0.5f, -0.5f, 0.0f }
+    };
+
+    KGFXBuffer vertexBuffer;
+    result = kgfxCreateBuffer(device, sizeof(vertices), KGFX_BUFFER_USAGE_VERTEX_BUFFER, KGFX_RESOURCE_LOCATION_HOST, &vertexBuffer);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create vertex buffer\n");
+        kgfxDestroyCommandList(commandList);
+        kgfxDestroyCommandPool(commandPool);
+        kgfxDestroyGraphicsPipeline(pipeline);
+        kgfxDestroyShader(fragmentShader);
+        kgfxDestroyShader(vertexShader);
+        kgfxDestroySwapchain(swapchain);
+        kgfxDestroyDevice(device);
+        kgfxDestroyInstance(instance);
+        return result;
+    }
+
+    void* mappedData;
+    result = kgfxMapBuffer(vertexBuffer, &mappedData);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to map vertex buffer\n");
+        kgfxDestroyBuffer(vertexBuffer);
+        kgfxDestroyCommandList(commandList);
+        kgfxDestroyCommandPool(commandPool);
+        kgfxDestroyGraphicsPipeline(pipeline);
+        kgfxDestroyShader(fragmentShader);
+        kgfxDestroyShader(vertexShader);
+        kgfxDestroySwapchain(swapchain);
+        kgfxDestroyDevice(device);
+        kgfxDestroyInstance(instance);
+        return result;
+    }
+    memcpy(mappedData, vertices, sizeof(vertices));
+    kgfxUnmapBuffer(vertexBuffer);
     
     while (!glfwWindowShouldClose(window)) {
         result = kgfxOpenCommandList(commandList, KGFX_FALSE);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to open command list\n");
+            kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
             kgfxDestroyGraphicsPipeline(pipeline);
@@ -310,6 +341,8 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         }
 
         kgfxCmdBindGraphicsPipeline(commandList, pipeline);
+        uint64_t offset = 0;
+        kgfxCmdBindVertexBuffers(commandList, 0, 1, &vertexBuffer, &offset);
 
         KGFXViewport viewport;
         viewport.x = 0.0f;
@@ -343,6 +376,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         result = kgfxCloseCommandList(commandList);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to close command list\n");
+            kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
             kgfxDestroyGraphicsPipeline(pipeline);
@@ -357,6 +391,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         result = kgfxSubmitCommandList(commandList);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to submit command list\n");
+            kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
             kgfxDestroyGraphicsPipeline(pipeline);
@@ -371,6 +406,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         result = kgfxPresentSwapchain(swapchain);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to present swapchain\n");
+            kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
             kgfxDestroyGraphicsPipeline(pipeline);
@@ -381,7 +417,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
             kgfxDestroyInstance(instance);
             return result;
         }
-        
+
         glfwPollEvents();
 #ifdef KGFX_WIN32
         Sleep(2);
@@ -389,7 +425,8 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         usleep(2000);
 #endif /* #ifdef KGFX_WIN32 */
     }
-    
+
+    kgfxDestroyBuffer(vertexBuffer);
     kgfxDestroyCommandList(commandList);
     kgfxDestroyCommandPool(commandPool);
     kgfxDestroyGraphicsPipeline(pipeline);

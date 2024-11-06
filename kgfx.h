@@ -59,6 +59,8 @@ typedef enum KGFXResult {
     KGFX_RESULT_ERROR_UNSUPPORTED = 18,
     /* objects cannot be allocated based on the given space */
     KGFX_RESULT_ERROR_OUT_OF_MEMORY = 19,
+    /* operation is illegal or cannot be performed */
+    KGFX_RESULT_ERROR_INVALID_OPERATION = 20,
 } KGFXResult;
 
 typedef enum KGFXInstanceAPI {
@@ -343,6 +345,13 @@ typedef enum KGFXBufferUsage {
     KGFX_BUFFER_USAGE_UNIFORM_BUFFER_STORAGE_BUFFER = KGFX_BUFFER_USAGE_UNIFORM_BUFFER | KGFX_BUFFER_USAGE_STORAGE_BUFFER,
     KGFX_BUFFER_USAGE_TRANSFER_ALL = KGFX_BUFFER_USAGE_TRANSFER_SRC | KGFX_BUFFER_USAGE_TRANSFER_DST,
 } KGFXBufferUsage;
+typedef uint32_t KGFXBufferUsageMask;
+
+typedef enum KGFXResourceLocation {
+    KGFX_RESOURCE_LOCATION_DEVICE = 1,
+    KGFX_RESOURCE_LOCATION_HOST = 2,
+    KGFX_RESOURCE_LOCATION_SHARED = 3,
+} KGFXResourceLocation;
 
 typedef enum KGFXIndexType {
     KGFX_INDEX_TYPE_U16 = 1,
@@ -544,9 +553,13 @@ KGFX_API KGFXResult kgfxEnumerateAdapters(KGFXInstance instance, uint32_t adapte
 KGFX_API KGFXResult kgfxCreateDevice(KGFXInstance instance, uint32_t adapterID, KGFXDevice* pDevice);
 KGFX_API void kgfxDestroyDevice(KGFXDevice device);
 
-/* TODO: implement buffers */
-KGFX_API KGFXResult kgfxCreateBuffer(KGFXDevice device, uint64_t size, KGFXBufferUsage usage, KGFXBuffer* pBuffer);
+KGFX_API KGFXResult kgfxCreateBuffer(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer);
 KGFX_API void kgfxDestroyBuffer(KGFXBuffer buffer);
+
+KGFX_API KGFXResult kgfxMapBuffer(KGFXBuffer buffer, void** ppData);
+KGFX_API void kgfxUnmapBuffer(KGFXBuffer buffer);
+
+/* (high) TODO: more resource */
 
 KGFX_API KGFXResult kgfxCreateShaderSPIRV(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFX_API KGFXResult kgfxCreateShaderDXBC(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
@@ -845,6 +858,7 @@ typedef struct KGFXDevice_Vulkan_t {
     
     struct {
         VkDevice device;
+        VkPhysicalDevice physicalDevice;
         
         VkQueue graphicsQueue;
         VkQueue computeQueue;
@@ -864,6 +878,9 @@ typedef struct KGFXDevice_Vulkan_t {
         uint32_t currentGraphicsPipelineID;
         uint32_t currentCommandPoolID;
         uint32_t currentSwapchainID;
+        uint32_t currentBufferID;
+        uint32_t currentTextureID;
+        uint32_t currentSamplerID;
     } vk;
 } KGFXDevice_Vulkan_t;
 
@@ -871,8 +888,10 @@ typedef struct KGFXBuffer_Vulkan_t {
     KGFXObject obj;
     KGFXDevice device;
     
+    KGFXBool mapped;
     uint64_t size;
-    KGFXBufferUsage usage;
+    KGFXBufferUsageMask usage;
+    KGFXResourceLocation location;
     
     struct {
         VkBuffer buffer;
@@ -1698,6 +1717,62 @@ KGFXBool kgfx_vulkan_vkDescriptorType(KGFXResourceType type, VkDescriptorType* p
     return KGFX_TRUE;
 }
 
+KGFXBool kgfx_vulkan_vkBufferUsageFlags(KGFXBufferUsageMask usage, VkBufferUsageFlags* pUsage) {
+    VkBufferUsageFlags flags = 0;
+    if (usage & KGFX_BUFFER_USAGE_VERTEX_BUFFER) {
+        flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    }
+
+    if (usage & KGFX_BUFFER_USAGE_INDEX_BUFFER) {
+        flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    }
+
+    if (usage & KGFX_BUFFER_USAGE_UNIFORM_BUFFER) {
+        flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    }
+
+    if (usage & KGFX_BUFFER_USAGE_STORAGE_BUFFER) {
+        flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
+
+    if (usage & KGFX_BUFFER_USAGE_INDIRECT_BUFFER) {
+        flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    }
+
+    if (usage & KGFX_BUFFER_USAGE_TRANSFER_SRC) {
+        flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    if (usage & KGFX_BUFFER_USAGE_TRANSFER_DST) {
+        flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    }
+
+    if (flags == 0) {
+        return KGFX_FALSE;
+    }
+
+    *pUsage = flags;
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_vulkan_vkMemoryPropertyFlags(KGFXResourceLocation location, VkMemoryPropertyFlags* pFlags) {
+    switch (location) {
+        case KGFX_RESOURCE_LOCATION_DEVICE:
+            *pFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            break;
+        case KGFX_RESOURCE_LOCATION_HOST:
+            *pFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            break;
+        case KGFX_RESOURCE_LOCATION_SHARED:
+            *pFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
 VkBool32 kgfx_vulkan_debugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
     KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) pUserData;
     if (vulkanInstance->debugCallback == NULL) {
@@ -1862,6 +1937,20 @@ void kgfx_vulkan_transitionTexture(KGFXCommandList_Vulkan_t* vulkanCommandList, 
         vkFreeCommandBuffers(vulkanDevice->vk.device, vkPool, 1, &vkBuffer);
         vkDestroyCommandPool(vulkanDevice->vk.device, vkPool, NULL);
     }
+}
+
+KGFXBool kgfx_vulkan_memoryType(VkPhysicalDevice vkPhysicalDevice, uint32_t memoryTypeBits, VkMemoryPropertyFlags props, uint32_t* pMemoryTypeIndex) {
+    VkPhysicalDeviceMemoryProperties memoryProperties;
+    vkGetPhysicalDeviceMemoryProperties(vkPhysicalDevice, &memoryProperties);
+    
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i) {
+        if ((memoryTypeBits & (1 << i)) && (memoryProperties.memoryTypes[i].propertyFlags & props) == props) {
+            *pMemoryTypeIndex = i;
+            return KGFX_TRUE;
+        }
+    }
+    
+    return KGFX_FALSE;
 }
 
 KGFXResult kgfxCreateInstance_vulkan(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
@@ -2375,6 +2464,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     
     device->obj.api = KGFX_INSTANCE_API_VULKAN;
     device->obj.instance = instance;
+    device->vk.physicalDevice = vkPhysicalDevice;
     device->vk.graphicsQueueIndex = gfxIndexBest;
     device->vk.computeQueueIndex = cmpIndexBest;
     device->vk.transferQueueIndex = trnIndexBest;
@@ -2413,6 +2503,121 @@ void kgfxDestroyDevice_vulkan(KGFXDevice device) {
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
     vkDestroyDevice(vulkanDevice->vk.device, NULL);
     free(vulkanDevice);
+}
+
+KGFXResult kgfxCreateBuffer_vulkan(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer) {
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
+
+    VkBufferCreateInfo createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    createInfo.pNext = NULL;
+    createInfo.flags = 0;
+    createInfo.size = (VkDeviceSize) size;
+    if (!kgfx_vulkan_vkBufferUsageFlags(usage, &createInfo.usage)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.queueFamilyIndexCount = 0;
+    createInfo.pQueueFamilyIndices = NULL;
+
+    VkBuffer vkBuffer;
+    if (vkCreateBuffer(vulkanDevice->vk.device, &createInfo, NULL, &vkBuffer) != VK_SUCCESS) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_BUFFER, vkBuffer, "KGFX Buffer %u", vulkanDevice->vk.currentBufferID++);
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(vulkanDevice->vk.device, vkBuffer, &memRequirements);
+
+    VkMemoryPropertyFlags memPropFlags;
+    if (!kgfx_vulkan_vkMemoryPropertyFlags(location, &memPropFlags)) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    VkMemoryAllocateInfo allocInfo;
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = NULL;
+    allocInfo.allocationSize = memRequirements.size;
+
+    if (!kgfx_vulkan_memoryType(vulkanDevice->vk.physicalDevice, memRequirements.memoryTypeBits, memPropFlags, &allocInfo.memoryTypeIndex)) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    VkDeviceMemory vkMemory;
+    if (vkAllocateMemory(vulkanDevice->vk.device, &allocInfo, NULL, &vkMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_DEVICE_MEMORY, vkMemory, "KGFX Memory for Buffer %u", vulkanDevice->vk.currentBufferID - 1);
+
+    if (vkBindBufferMemory(vulkanDevice->vk.device, vkBuffer, vkMemory, 0) != VK_SUCCESS) {
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) malloc(sizeof(KGFXBuffer_Vulkan_t));
+    if (vulkanBuffer == NULL) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    memset(vulkanBuffer, 0, sizeof(KGFXBuffer_Vulkan_t));
+
+    vulkanBuffer->obj.api = KGFX_INSTANCE_API_VULKAN;
+    vulkanBuffer->obj.instance = device->instance;
+    vulkanBuffer->device = device;
+    vulkanBuffer->vk.buffer = vkBuffer;
+    vulkanBuffer->vk.memory = vkMemory;
+    vulkanBuffer->size = size;
+    vulkanBuffer->usage = usage;
+    vulkanBuffer->location = location;
+
+    *pBuffer = &vulkanBuffer->obj;
+    return KGFX_RESULT_SUCCESS;
+}
+
+void kgfxDestroyBuffer_vulkan(KGFXBuffer buffer) {
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanBuffer->device;
+    vkDestroyBuffer(vulkanDevice->vk.device, vulkanBuffer->vk.buffer, NULL);
+    vkFreeMemory(vulkanDevice->vk.device, vulkanBuffer->vk.memory, NULL);
+    free(vulkanBuffer);
+}
+
+KGFXResult kgfxMapBuffer_vulkan(KGFXBuffer buffer, void** ppData) {
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanBuffer->device;
+    
+    if (vulkanBuffer->mapped) {
+        return KGFX_RESULT_ERROR_INVALID_OPERATION;
+    }
+    
+    if (vkMapMemory(vulkanDevice->vk.device, vulkanBuffer->vk.memory, 0, VK_WHOLE_SIZE, 0, ppData) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    vulkanBuffer->mapped = KGFX_TRUE;
+    return KGFX_RESULT_SUCCESS;
+}
+
+void kgfxUnmapBuffer_vulkan(KGFXBuffer buffer) {
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanBuffer->device;
+    
+    if (!vulkanBuffer->mapped) {
+        return;
+    }
+    
+    vkUnmapMemory(vulkanDevice->vk.device, vulkanBuffer->vk.memory);
+    vulkanBuffer->mapped = KGFX_FALSE;
 }
 
 KGFXResult kgfxCreateShaderSPIRV_vulkan(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
@@ -3394,7 +3599,15 @@ void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffe
 }
 
 void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFX_LIST(VkBuffer) buffers = { NULL, 0 };
+    KGFX_LIST_INIT(buffers, bindingCount, VkBuffer);
+    for (uint32_t i = 0; i < bindingCount; ++i) {
+        buffers.data[i] = ((KGFXBuffer_Vulkan_t*) pBuffers[i])->vk.buffer;
+    }
+
+    vkCmdBindVertexBuffers(vulkanCommandList->vk.commandBuffer, firstBinding, bindingCount, buffers.data, (VkDeviceSize*) pOffsets);
+    KGFX_LIST_FREE(buffers);
 }
 
 void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {
@@ -4072,6 +4285,23 @@ void kgfxDestroyDevice_d3d12(KGFXDevice device) {
     free(d3d12Device);
 }
 
+/* (medium) TODO: D3D12 buffers */
+KGFXResult kgfxCreateBuffer_d3d12(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroyBuffer_d3d12(KGFXBuffer buffer) {
+    return;
+}
+
+KGFXResult kgfxMapBuffer_d3d12(KGFXBuffer buffer, void** ppData) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxUnmapBuffer_d3d12(KGFXBuffer buffer) {
+    return;
+}
+
 /* (medium) TODO: D3D12 shaders */
 KGFXResult kgfxCreateShaderSPIRV_d3d12(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
@@ -4359,6 +4589,23 @@ void kgfxDestroyDevice_metal(KGFXDevice device) {
     free(device);
 }
 
+/* (low-medium) TODO: Metal buffers */
+KGFXResult kgfxCreateBuffer_metal(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroyBuffer_metal(KGFXBuffer buffer) {
+    return;
+}
+
+KGFXResult kgfxMapBuffer_metal(KGFXBuffer buffer, void** ppData) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxUnmapBuffer_metal(KGFXBuffer buffer) {
+    return;
+}
+
 /* (low-medium) TODO: Metal shaders */
 KGFXResult kgfxCreateShaderSPIRV_metal(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
@@ -4626,6 +4873,104 @@ void kgfxDestroyDevice(KGFXDevice device) {
 #ifdef KGFX_METAL
         case KGFX_INSTANCE_API_METAL:
             kgfxDestroyDevice_metal(device);
+            break;
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+KGFXResult kgfxCreateBuffer(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer) {
+    if (device == NULL || usage == 0 || pBuffer == NULL || size == 0) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (device->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxCreateBuffer_vulkan(device, size, usage, location, pBuffer);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxCreateBuffer_d3d12(device, size, usage, location, pBuffer);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxCreateBuffer_metal(device, size, usage, location, pBuffer);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+void kgfxDestroyBuffer(KGFXBuffer buffer) {
+    if (buffer == NULL) {
+        return;
+    }
+
+    switch (buffer->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxDestroyBuffer_vulkan(buffer);
+            break;
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxDestroyBuffer_d3d12(buffer);
+            break;
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxDestroyBuffer_metal(buffer);
+            break;
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+KGFXResult kgfxMapBuffer(KGFXBuffer buffer, void** ppData) {
+    if (buffer == NULL || ppData == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (buffer->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxMapBuffer_vulkan(buffer, ppData);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxMapBuffer_d3d12(buffer, ppData);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxMapBuffer_metal(buffer, ppData);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+void kgfxUnmapBuffer(KGFXBuffer buffer) {
+    if (buffer == NULL) {
+        return;
+    }
+
+    switch (buffer->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxUnmapBuffer_vulkan(buffer);
+            break;
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxUnmapBuffer_d3d12(buffer);
+            break;
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxUnmapBuffer_metal(buffer);
             break;
 #endif /* KGFX_METAL */
         default:
