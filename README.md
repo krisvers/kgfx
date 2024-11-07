@@ -14,11 +14,10 @@ While I don't see there being many opportunities for this to be useful, you can 
 
 1. Draw a triangle purely using KGFX interface across Vulkan, D3D12, and Metal
     - (✅) Device acquisition (All)
-    - (🔨) Swapchains (Only with Vulkan on macOS and Win32 currently)
-    - (🔨) Command utilities (In progress for Vulkan)
-    - (🔨) Graphics pipelines (Basic parts implemented for Vulkan)
-	- (⏰) Resource creation and usage (None)
-	- (⏰) Explicit and implicit synchronization (None)
+    - (🔨) Swapchains (Only on macOS and Win32 currently 🌋)
+    - (🔨) Command utilities (Basic commands and creation 🌋)
+    - (🔨) Graphics pipelines (Basic parts 🌋)
+	- (🔨) Resource creation and usage (Buffers work, textures are being worked on 🌋)
 
 ## Priorities
 

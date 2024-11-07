@@ -19,6 +19,7 @@
 #endif /* #ifdef KGFX_WIN32 */
 
 #include "kgfx.h"
+#include "linmath.h"
 #include <stdio.h>
 
 #include <GLFW/glfw3.h>
@@ -26,7 +27,12 @@
 
 typedef struct Vertex {
     float x, y, z;
+    float r, g, b;
 } Vertex;
+
+typedef struct UniformData {
+    mat4x4 mvp;
+} UniformData;
 
 void debugCallbackKGFX(KGFXInstance instance, KGFXDebugSeverity severity, KGFXDebugSource source, const char* message) {
     printf("[KGFX] %s\n", message);
@@ -115,7 +121,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     swapchainDesc.height = 600;
     swapchainDesc.format = KGFX_FORMAT_B8G8R8A8_SRGB;
     swapchainDesc.imageCount = 2;
-    swapchainDesc.presentMode = KGFX_PRESENT_MODE_NO_SYNC;
+    swapchainDesc.presentMode = KGFX_PRESENT_MODE_VSYNC;
     
     KGFXSwapchain swapchain;
 #ifdef KGFX_WIN32
@@ -134,48 +140,8 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
 
     KGFXTexture backbuffer = kgfxGetSwapchainBackbuffer(swapchain);
     
-    const uint32_t vertexShaderSPIRV[] = {
-        0x07230203,0x00010000,0x0008000b,0x0000001b,0x00000000,0x00020011,0x00000001,0x0006000b,
-        0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-        0x0007000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00000012,0x00030003,
-        0x00000002,0x000001c2,0x00040005,0x00000004,0x6e69616d,0x00000000,0x00060005,0x0000000b,
-        0x505f6c67,0x65567265,0x78657472,0x00000000,0x00060006,0x0000000b,0x00000000,0x505f6c67,
-        0x7469736f,0x006e6f69,0x00070006,0x0000000b,0x00000001,0x505f6c67,0x746e696f,0x657a6953,
-        0x00000000,0x00070006,0x0000000b,0x00000002,0x435f6c67,0x4470696c,0x61747369,0x0065636e,
-        0x00070006,0x0000000b,0x00000003,0x435f6c67,0x446c6c75,0x61747369,0x0065636e,0x00030005,
-        0x0000000d,0x00000000,0x00050005,0x00000012,0x6f506e69,0x69746973,0x00006e6f,0x00050048,
-        0x0000000b,0x00000000,0x0000000b,0x00000000,0x00050048,0x0000000b,0x00000001,0x0000000b,
-        0x00000001,0x00050048,0x0000000b,0x00000002,0x0000000b,0x00000003,0x00050048,0x0000000b,
-        0x00000003,0x0000000b,0x00000004,0x00030047,0x0000000b,0x00000002,0x00040047,0x00000012,
-        0x0000001e,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,
-        0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040015,0x00000008,
-        0x00000020,0x00000000,0x0004002b,0x00000008,0x00000009,0x00000001,0x0004001c,0x0000000a,
-        0x00000006,0x00000009,0x0006001e,0x0000000b,0x00000007,0x00000006,0x0000000a,0x0000000a,
-        0x00040020,0x0000000c,0x00000003,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000003,
-        0x00040015,0x0000000e,0x00000020,0x00000001,0x0004002b,0x0000000e,0x0000000f,0x00000000,
-        0x00040017,0x00000010,0x00000006,0x00000003,0x00040020,0x00000011,0x00000001,0x00000010,
-        0x0004003b,0x00000011,0x00000012,0x00000001,0x0004002b,0x00000006,0x00000014,0x3f800000,
-        0x00040020,0x00000019,0x00000003,0x00000007,0x00050036,0x00000002,0x00000004,0x00000000,
-        0x00000003,0x000200f8,0x00000005,0x0004003d,0x00000010,0x00000013,0x00000012,0x00050051,
-        0x00000006,0x00000015,0x00000013,0x00000000,0x00050051,0x00000006,0x00000016,0x00000013,
-        0x00000001,0x00050051,0x00000006,0x00000017,0x00000013,0x00000002,0x00070050,0x00000007,
-        0x00000018,0x00000015,0x00000016,0x00000017,0x00000014,0x00050041,0x00000019,0x0000001a,
-        0x0000000d,0x0000000f,0x0003003e,0x0000001a,0x00000018,0x000100fd,0x00010038
-    };
-    
-    const uint32_t fragmentShaderSPIRV[] = {
-        0x07230203,0x00010000,0x0008000b,0x0000000d,0x00000000,0x00020011,0x00000001,0x0006000b,
-        0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-        0x0006000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000009,0x00030010,0x00000004,
-        0x00000007,0x00030003,0x00000002,0x000001c2,0x00040005,0x00000004,0x6e69616d,0x00000000,
-        0x00050005,0x00000009,0x4374756f,0x726f6c6f,0x00000000,0x00040047,0x00000009,0x0000001e,
-        0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,
-        0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040020,0x00000008,0x00000003,
-        0x00000007,0x0004003b,0x00000008,0x00000009,0x00000003,0x0004002b,0x00000006,0x0000000a,
-        0x00000000,0x0004002b,0x00000006,0x0000000b,0x3f800000,0x0007002c,0x00000007,0x0000000c,
-        0x0000000a,0x0000000b,0x0000000a,0x0000000b,0x00050036,0x00000002,0x00000004,0x00000000,
-        0x00000003,0x000200f8,0x00000005,0x0003003e,0x00000009,0x0000000c,0x000100fd,0x00010038
-    };
+    #include "shader.vert.spv.h"
+    #include "shader.frag.spv.h"
     
     KGFXShader vertexShader;
     result = kgfxCreateShaderSPIRV(device, vertexShaderSPIRV, sizeof(vertexShaderSPIRV), "main", KGFX_SHADER_STAGE_VERTEX, &vertexShader);
@@ -200,27 +166,31 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     
     KGFXShader shaders[2] = { vertexShader, fragmentShader };
     
-    KGFXRenderTargetDesc renderTargetDesc;
-    renderTargetDesc.format = swapchainDesc.format;
-    renderTargetDesc.width = swapchainDesc.width;
-    renderTargetDesc.height = swapchainDesc.height;
-    renderTargetDesc.layers = 1;
-    renderTargetDesc.enableBlending = KGFX_FALSE;
-    renderTargetDesc.colorWriteMask = KGFX_COLOR_MASK_ALL;
-    renderTargetDesc.loadOp = KGFX_RENDER_TARGET_OP_CLEAR;
-    renderTargetDesc.storeOp = KGFX_RENDER_TARGET_OP_STORE;
-    renderTargetDesc.finalLayout = KGFX_TEXTURE_LAYOUT_PRESENT;
+    KGFXRenderTargetDesc renderTargetDescs[1];
+    renderTargetDescs[0].format = swapchainDesc.format;
+    renderTargetDescs[0].width = swapchainDesc.width;
+    renderTargetDescs[0].height = swapchainDesc.height;
+    renderTargetDescs[0].layers = 1;
+    renderTargetDescs[0].enableBlending = KGFX_FALSE;
+    renderTargetDescs[0].colorWriteMask = KGFX_COLOR_MASK_ALL;
+    renderTargetDescs[0].loadOp = KGFX_RENDER_TARGET_OP_CLEAR;
+    renderTargetDescs[0].storeOp = KGFX_RENDER_TARGET_OP_STORE;
+    renderTargetDescs[0].finalLayout = KGFX_TEXTURE_LAYOUT_PRESENT;
     
     KGFXVertexBindingDesc bindingDesc;
     bindingDesc.binding = 0;
     bindingDesc.stride = sizeof(Vertex);
     bindingDesc.inputRate = KGFX_VERTEX_INPUT_RATE_PER_VERTEX;
     
-    KGFXVertexAttributeDesc attributeDesc;
-    attributeDesc.binding = 0;
-    attributeDesc.location = 0;
-    attributeDesc.offset = 0;
-    attributeDesc.format = KGFX_FORMAT_R32G32B32_FLOAT;
+    KGFXVertexAttributeDesc attributeDescs[2];
+    attributeDescs[0].binding = 0;
+    attributeDescs[0].location = 0;
+    attributeDescs[0].offset = 0;
+    attributeDescs[0].format = KGFX_FORMAT_R32G32B32_FLOAT;
+    attributeDescs[1].binding = 0;
+    attributeDescs[1].location = 1;
+    attributeDescs[1].offset = offsetof(Vertex, r);
+    attributeDescs[1].format = KGFX_FORMAT_R32G32B32_FLOAT;
     
     KGFXGraphicsPipelineDesc pipelineDesc;
     pipelineDesc.cullMode = KGFX_CULL_MODE_NONE;
@@ -230,19 +200,55 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     pipelineDesc.viewportAndScissorCount = 1;
     pipelineDesc.vertexInputDesc.bindingCount = 1;
     pipelineDesc.vertexInputDesc.pBindings = &bindingDesc;
-    pipelineDesc.vertexInputDesc.attributeCount = 1;
-    pipelineDesc.vertexInputDesc.pAttributes = &attributeDesc;
+    pipelineDesc.vertexInputDesc.attributeCount = sizeof(attributeDescs) / sizeof(attributeDescs[0]);
+    pipelineDesc.vertexInputDesc.pAttributes = attributeDescs;
     pipelineDesc.shaderCount = 2;
     pipelineDesc.pShaders = shaders;
     pipelineDesc.blendLogicOp = KGFX_LOGIC_OP_DISABLED;
     pipelineDesc.framebufferWidth = swapchainDesc.width;
     pipelineDesc.framebufferHeight = swapchainDesc.height;
     pipelineDesc.framebufferLayers = 1;
-    pipelineDesc.renderTargetCount = 1;
-    pipelineDesc.pRenderTargetDescs = &renderTargetDesc;
-    pipelineDesc.depthStencilDesc.format = KGFX_FORMAT_UNKNOWN;
-    pipelineDesc.uniformSignatureDesc.uniformCount = 0;
-    pipelineDesc.uniformSignatureDesc.pUniforms = NULL;
+    pipelineDesc.renderTargetCount = sizeof(renderTargetDescs) / sizeof(renderTargetDescs[0]);
+    pipelineDesc.pRenderTargetDescs = renderTargetDescs;
+    
+    pipelineDesc.depthStencilDesc.format = KGFX_FORMAT_D32_FLOAT;
+    pipelineDesc.depthStencilDesc.width = swapchainDesc.width;
+    pipelineDesc.depthStencilDesc.height = swapchainDesc.height;
+    pipelineDesc.depthStencilDesc.layers = 1;
+    pipelineDesc.depthStencilDesc.compareOp = KGFX_COMPARE_OP_LEQUAL;
+    pipelineDesc.depthStencilDesc.writeDepth = KGFX_TRUE;
+    pipelineDesc.depthStencilDesc.testDepth = KGFX_TRUE;
+    pipelineDesc.depthStencilDesc.writeStencil = KGFX_FALSE;
+    pipelineDesc.depthStencilDesc.testStencil = KGFX_FALSE;
+    pipelineDesc.depthStencilDesc.readMaskStencil = 0;
+    pipelineDesc.depthStencilDesc.writeMaskStencil = 0;
+    pipelineDesc.depthStencilDesc.frontStencilOpDesc.failOp = KGFX_STENCIL_OP_KEEP;
+    pipelineDesc.depthStencilDesc.frontStencilOpDesc.failDepthOp = KGFX_STENCIL_OP_KEEP;
+    pipelineDesc.depthStencilDesc.frontStencilOpDesc.passOp = KGFX_STENCIL_OP_REPLACE;
+    pipelineDesc.depthStencilDesc.frontStencilOpDesc.compareOp = KGFX_COMPARE_OP_LESS;
+    pipelineDesc.depthStencilDesc.frontStencilOpDesc.reference = 0;
+    pipelineDesc.depthStencilDesc.backStencilOpDesc.failOp = KGFX_STENCIL_OP_KEEP;
+    pipelineDesc.depthStencilDesc.backStencilOpDesc.failDepthOp = KGFX_STENCIL_OP_KEEP;
+    pipelineDesc.depthStencilDesc.backStencilOpDesc.passOp = KGFX_STENCIL_OP_KEEP;
+    pipelineDesc.depthStencilDesc.backStencilOpDesc.compareOp = KGFX_COMPARE_OP_LESS;
+    pipelineDesc.depthStencilDesc.backStencilOpDesc.reference = 0;
+    pipelineDesc.depthStencilDesc.maximumDepth = 1.0f;
+    pipelineDesc.depthStencilDesc.minimumDepth = 0.0f;
+    pipelineDesc.depthStencilDesc.loadOp = KGFX_RENDER_TARGET_OP_CLEAR;
+    pipelineDesc.depthStencilDesc.storeOp = KGFX_RENDER_TARGET_OP_STORE;
+    pipelineDesc.depthStencilDesc.stencilLoadOp = KGFX_RENDER_TARGET_OP_CLEAR;
+    pipelineDesc.depthStencilDesc.stencilStoreOp = KGFX_RENDER_TARGET_OP_STORE;
+    pipelineDesc.depthStencilDesc.finalLayout = KGFX_TEXTURE_LAYOUT_DEPTH_READ;
+    
+    KGFXUniformDesc uniformDesc;
+    uniformDesc.resourceType = KGFX_RESOURCE_TYPE_UNIFORM_BUFFER;
+    uniformDesc.binding.type = KGFX_UNIFORM_BIND_POINT_TYPE_BINDING_INDEX;
+    uniformDesc.binding.bindPoint.bindingIndex.binding = 0;
+    uniformDesc.stages = KGFX_SHADER_STAGE_VERTEX;
+    uniformDesc.arrayLength = 1;
+    
+    pipelineDesc.uniformSignatureDesc.uniformCount = 1;
+    pipelineDesc.uniformSignatureDesc.pUniforms = &uniformDesc;
     
     KGFXGraphicsPipeline pipeline;
     result = kgfxCreateGraphicsPipeline(device, &pipelineDesc, &pipeline);
@@ -255,8 +261,6 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         kgfxDestroyInstance(instance);
         return result;
     }
-    
-    /* TODO: pipeline destruction */
     
     KGFXCommandPool commandPool;
     result = kgfxCreateCommandPool(device, 1, KGFX_QUEUE_TYPE_GENERIC, &commandPool);
@@ -286,9 +290,12 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     }
 
     Vertex vertices[] = {
-        { 0.0f, 0.5f, 0.0f },
-        { 0.5f, -0.5f, 0.0f },
-        { -0.5f, -0.5f, 0.0f }
+        { 0.0f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f },
+        { 0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f },
+        { -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 1.0f, 0.5f, 0.2f, 0.0f, 0.0f },
+        { 1.0f, -1.0f, 0.5f, 0.0f, 0.0f, 0.2f },
+        { -1.0f, -1.0f, 0.5f, 0.0f, 0.2f, 0.0f },
     };
 
     KGFXBuffer vertexBuffer;
@@ -321,10 +328,78 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         return result;
     }
     
+    KGFXBuffer uniformBuffer;
+    result = kgfxCreateBuffer(device, sizeof(UniformData), KGFX_BUFFER_USAGE_UNIFORM_BUFFER, KGFX_RESOURCE_LOCATION_HOST, &uniformBuffer);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create uniform buffer\n");
+        kgfxDestroyCommandList(commandList);
+        kgfxDestroyCommandPool(commandPool);
+        kgfxDestroyGraphicsPipeline(pipeline);
+        kgfxDestroyShader(fragmentShader);
+        kgfxDestroyShader(vertexShader);
+        kgfxDestroySwapchain(swapchain);
+        kgfxDestroyDevice(device);
+        kgfxDestroyInstance(instance);
+        return result;
+    }
+    
+    UniformData* pUniformData;
+    result = kgfxMapBuffer(uniformBuffer, &pUniformData);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to map uniform buffer\n");
+        kgfxDestroyBuffer(uniformBuffer);
+        kgfxDestroyCommandList(commandList);
+        kgfxDestroyCommandPool(commandPool);
+        kgfxDestroyGraphicsPipeline(pipeline);
+        kgfxDestroyShader(fragmentShader);
+        kgfxDestroyShader(vertexShader);
+        kgfxDestroySwapchain(swapchain);
+        kgfxDestroyDevice(device);
+        kgfxDestroyInstance(instance);
+        return result;
+    }
+    
+    KGFXTextureDesc textureDesc;
+    textureDesc.dimensionType = KGFX_DIMENSION_TYPE_2D;
+    textureDesc.width = swapchainDesc.width;
+    textureDesc.height = swapchainDesc.height;
+    textureDesc.depth = 1;
+    textureDesc.layers = 1;
+    textureDesc.mipMapLevels = 1;
+    textureDesc.format = KGFX_FORMAT_D32_FLOAT;
+    textureDesc.usage = KGFX_TEXTURE_USAGE_DEPTH_STENCIL_TARGET;
+    textureDesc.location = KGFX_RESOURCE_LOCATION_DEVICE;
+    
+    KGFXTexture depthTexture;
+    result = kgfxCreateTexture(device, &textureDesc, &depthTexture);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create depth texture\n");
+        kgfxUnmapBuffer(uniformBuffer);
+        kgfxDestroyBuffer(uniformBuffer);
+        kgfxDestroyBuffer(vertexBuffer);
+        kgfxDestroyCommandList(commandList);
+        kgfxDestroyCommandPool(commandPool);
+        kgfxDestroyGraphicsPipeline(pipeline);
+        kgfxDestroyShader(fragmentShader);
+        kgfxDestroyShader(vertexShader);
+        kgfxDestroySwapchain(swapchain);
+        kgfxDestroyDevice(device);
+        kgfxDestroyInstance(instance);
+        return result;
+    }
+    
     while (!glfwWindowShouldClose(window)) {
+        mat4x4_identity(pUniformData->mvp);
+        mat4x4_rotate_Z(pUniformData->mvp, pUniformData->mvp, glfwGetTime());
+        
+        kgfxResetCommandList(commandList);
+        
         result = kgfxOpenCommandList(commandList, KGFX_FALSE);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to open command list\n");
+            kgfxDestroyTexture(depthTexture);
+            kgfxUnmapBuffer(uniformBuffer);
+            kgfxDestroyBuffer(uniformBuffer);
             kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
@@ -356,23 +431,33 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         scissor.height = swapchainDesc.height;
 
         kgfxCmdSetViewportAndScissor(commandList, 1, &viewport, &scissor);
-        kgfxCmdBindRenderTargets(commandList, 1, &backbuffer, NULL);
-
+        
+        KGFXTexture renderTargets[1] = { backbuffer };
+        kgfxCmdBindRenderTargets(commandList, sizeof(renderTargets) / sizeof(renderTargets[0]), renderTargets, depthTexture);
+        
         KGFXClearValue clearValue;
         clearValue.type = KGFX_CLEAR_VALUE_TYPE_F32;
-        clearValue.value.f32[0] = 1.0f;
+        clearValue.value.f32[0] = 0.01f;
         clearValue.value.f32[1] = 0.0f;
-        clearValue.value.f32[2] = 1.0f;
+        clearValue.value.f32[2] = 0.02f;
         clearValue.value.f32[3] = 1.0f;
+        
+        KGFXClearValue depthClearValue;
+        depthClearValue.type = KGFX_CLEAR_VALUE_TYPE_DEPTH_STENCIL;
+        depthClearValue.value.depthStencil.depth = 1.0f;
+        depthClearValue.value.depthStencil.stencil = 0;
 
-        kgfxCmdBeginRendering(commandList, 1, &clearValue, NULL);
+        kgfxCmdBeginRendering(commandList, 1, &clearValue, &depthClearValue);
 
-        kgfxCmdDraw(commandList, 3, 1, 0, 0);
+        kgfxCmdDraw(commandList, sizeof(vertices) / sizeof(Vertex), 1, 0, 0);
 
         kgfxCmdEndRendering(commandList);
         result = kgfxCloseCommandList(commandList);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to close command list\n");
+            kgfxDestroyTexture(depthTexture);
+            kgfxUnmapBuffer(uniformBuffer);
+            kgfxDestroyBuffer(uniformBuffer);
             kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
@@ -388,6 +473,9 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         result = kgfxSubmitCommandList(commandList);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to submit command list\n");
+            kgfxDestroyTexture(depthTexture);
+            kgfxUnmapBuffer(uniformBuffer);
+            kgfxDestroyBuffer(uniformBuffer);
             kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
@@ -403,6 +491,9 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         result = kgfxPresentSwapchain(swapchain);
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to present swapchain\n");
+            kgfxDestroyTexture(depthTexture);
+            kgfxUnmapBuffer(uniformBuffer);
+            kgfxDestroyBuffer(uniformBuffer);
             kgfxDestroyBuffer(vertexBuffer);
             kgfxDestroyCommandList(commandList);
             kgfxDestroyCommandPool(commandPool);
@@ -422,7 +513,10 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         usleep(2000);
 #endif /* #ifdef KGFX_WIN32 */
     }
-
+    
+    kgfxDestroyTexture(depthTexture);
+    kgfxUnmapBuffer(uniformBuffer);
+    kgfxDestroyBuffer(uniformBuffer);
     kgfxDestroyBuffer(vertexBuffer);
     kgfxDestroyCommandList(commandList);
     kgfxDestroyCommandPool(commandPool);
