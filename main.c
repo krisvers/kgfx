@@ -390,7 +390,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     
     while (!glfwWindowShouldClose(window)) {
         mat4x4_identity(pUniformData->mvp);
-        mat4x4_rotate_Z(pUniformData->mvp, pUniformData->mvp, glfwGetTime());
+        mat4x4_rotate_Z(pUniformData->mvp, pUniformData->mvp, (float) glfwGetTime());
         
         kgfxResetCommandList(commandList);
         
@@ -413,6 +413,12 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         }
 
         kgfxCmdBindGraphicsPipeline(commandList, pipeline);
+
+        KGFXUniformBinding binding;
+        binding.bindPoint.bindingIndex.binding = 0;
+        binding.type = KGFX_UNIFORM_BIND_POINT_TYPE_BINDING_INDEX;
+        kgfxCmdBindUniformBuffer(commandList, binding, uniformBuffer, 0, sizeof(UniformData));
+
         uint64_t offset = 0;
         kgfxCmdBindVertexBuffers(commandList, 0, 1, &vertexBuffer, &offset);
 

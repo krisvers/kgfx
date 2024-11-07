@@ -646,12 +646,14 @@ KGFX_API KGFXResult kgfxSubmitCommandList(KGFXCommandList commandList);
 KGFX_API void kgfxCmdBindGraphicsPipeline(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
 KGFX_API void kgfxCmdSetViewportAndScissor(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
 KGFX_API void kgfxCmdBindRenderTargets(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
-/* TODO: command bind uniforms */
-KGFX_API void kgfxCmdBindUniformBuffer(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
 KGFX_API void kgfxCmdBeginRendering(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 KGFX_API void kgfxCmdEndRendering(KGFXCommandList commandList);
+
+/* TODO: command bind uniforms */
+KGFX_API void kgfxCmdBindUniformBuffer(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
 KGFX_API void kgfxCmdBindIndexBuffer(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 KGFX_API void kgfxCmdBindVertexBuffers(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+
 KGFX_API void kgfxCmdDraw(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
 KGFX_API void kgfxCmdDrawIndexed(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
 KGFX_API void kgfxCmdDrawIndirect(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
@@ -755,6 +757,7 @@ void kgfxCmdSetViewportAndScissor_vulkan(KGFXCommandList commandList, uint32_t v
 void kgfxCmdBindRenderTargets_vulkan(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
 void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList);
+void kgfxCmdBindUniformBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
 void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
@@ -826,6 +829,7 @@ void kgfxCmdSetViewportAndScissor_d3d12(KGFXCommandList commandList, uint32_t vi
 void kgfxCmdBindRenderTargets_d3d12(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
 void kgfxCmdBeginRendering_d3d12(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 void kgfxCmdEndRendering_d3d12(KGFXCommandList commandList);
+void kgfxCmdBindUniformBuffer_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
 void kgfxCmdBindIndexBuffer_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 void kgfxCmdBindVertexBuffers_d3d12(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 void kgfxCmdDraw(KGFXCommandList _d3d12commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
@@ -893,6 +897,7 @@ void kgfxCmdSetViewportAndScissor_metal(KGFXCommandList commandList, uint32_t vi
 void kgfxCmdBindRenderTargets_metal(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
 void kgfxCmdBeginRendering_metal(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 void kgfxCmdEndRendering_metal(KGFXCommandList commandList);
+void kgfxCmdBindUniformBuffer_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
 void kgfxCmdBindIndexBuffer_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 void kgfxCmdBindVertexBuffers_metal(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 void kgfxCmdDraw_metal(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
@@ -4311,6 +4316,11 @@ void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList) {
     }
 }
 
+/* (high) TODO: Vulkan commands */
+void kgfxCmdBindUniformBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    return;
+}
+
 void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
     return;
 }
@@ -5128,6 +5138,10 @@ void kgfxCmdEndRendering_d3d12(KGFXCommandList commandList) {
     return;
 }
 
+void kgfxCmdBindUniformBuffer_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    return;
+}
+
 void kgfxCmdBindIndexBuffer_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
     return;
 }
@@ -5454,6 +5468,10 @@ void kgfxCmdBeginRendering_metal(KGFXCommandList commandList, uint32_t renderTar
 }
 
 void kgfxCmdEndRendering_metal(KGFXCommandList commandList) {
+    return;
+}
+
+void kgfxCmdBindUniformBuffer_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
     return;
 }
 
@@ -6354,8 +6372,31 @@ void kgfxCmdEndRendering(KGFXCommandList commandList) {
     }
 }
 
+void kgfxCmdBindUniformBuffer(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    if (commandList == NULL || buffer == NULL || size == 0) {
+        return;
+    }
+
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindUniformBuffer_vulkan(commandList, binding, buffer, offset, size);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindUniformBuffer_d3d12(commandList, binding, buffer, offset, size);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindUniformBuffer_metal(commandList, binding, buffer, offset, size);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
 void kgfxCmdBindIndexBuffer(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
-    if (commandList == NULL) {
+    if (commandList == NULL || buffer == NULL) {
         return;
     }
 
