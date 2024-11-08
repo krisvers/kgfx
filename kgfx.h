@@ -658,8 +658,6 @@ KGFX_API KGFXResult kgfxDownloadTexture(KGFXTexture texture, void* pData, uint64
 KGFX_API KGFXResult kgfxCreateSampler(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
 KGFX_API void kgfxDestroySampler(KGFXSampler sampler);
 
-/* (high) TODO: more resource */
-
 KGFX_API KGFXResult kgfxCreateShaderSPIRV(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFX_API KGFXResult kgfxCreateShaderDXBC(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFX_API KGFXResult kgfxCreateShaderGLSL(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader);
@@ -778,6 +776,9 @@ void kgfxDestroyTexture_vulkan(KGFXTexture texture);
 KGFXResult kgfxUploadTexture_vulkan(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
 KGFXResult kgfxDownloadTexture_vulkan(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
 
+KGFXResult kgfxCreateSampler_vulkan(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
+void kgfxDestroySampler_vulkan(KGFXSampler sampler);
+
 KGFXResult kgfxCreateShaderSPIRV_vulkan(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFXResult kgfxCreateShaderDXBC_vulkan(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFXResult kgfxCreateShaderGLSL_vulkan(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader);
@@ -847,6 +848,9 @@ void kgfxDestroyTexture_d3d12(KGFXTexture texture);
 KGFXResult kgfxUploadTexture_d3d12(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
 KGFXResult kgfxDownloadTexture_d3d12(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
 
+KGFXResult kgfxCreateSampler_d3d12(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
+void kgfxDestroySampler_d3d12(KGFXSampler sampler);
+
 KGFXResult kgfxCreateShaderSPIRV_d3d12(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFXResult kgfxCreateShaderDXBC_d3d12(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFXResult kgfxCreateShaderGLSL_d3d12(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader);
@@ -914,6 +918,9 @@ void kgfxDestroyTexture_metal(KGFXTexture texture);
 
 KGFXResult kgfxUploadTexture_metal(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
 KGFXResult kgfxDownloadTexture_metal(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+
+KGFXResult kgfxCreateSampler_metal(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
+void kgfxDestroySampler_metal(KGFXSampler sampler);
 
 KGFXResult kgfxCreateShaderSPIRV_metal(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
 KGFXResult kgfxCreateShaderDXBC_metal(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
@@ -1083,6 +1090,15 @@ typedef struct KGFXTexture_Vulkan_t {
 
     KGFXBool isSwapchainTexture;
 } KGFXTexture_Vulkan_t;
+
+typedef struct KGFXSampler_Vulkan_t {
+    KGFXObject obj;
+    KGFXDevice device;
+    
+    struct {
+        VkSampler sampler;
+    } vk;
+} KGFXSampler_Vulkan_t;
 
 typedef struct KGFXSwapchainTexture_Vulkan_t {
     KGFXTexture_Vulkan_t base;
@@ -3351,12 +3367,93 @@ void kgfxDestroyTexture_vulkan(KGFXTexture texture) {
     free(vulkanTexture);
 }
 
+/* (high) TODO: Vulkan texture loading operations */
 KGFXResult kgfxUploadTexture_vulkan(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 KGFXResult kgfxDownloadTexture_vulkan(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+/* (high) TODO: Vulkan sampler creation */
+KGFXResult kgfxCreateSampler_vulkan(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler) {
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
+    
+    VkSamplerCreateInfo createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    createInfo.pNext = NULL;
+    createInfo.flags = 0;
+    if (!kgfx_vulkan_vkFilter(pSamplerDesc->magFilter, &createInfo.magFilter)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    if (!kgfx_vulkan_vkFilter(pSamplerDesc->minFilter, &createInfo.minFilter)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    if (!kgfx_vulkan_vkSamplerMipmapMode(pSamplerDesc->mipMapFilter, &createInfo.mipmapMode)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    if (!kgfx_vulkan_vkSamplerAddressMode(pSamplerDesc->sampleModeU, &createInfo.addressModeU)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    if (!kgfx_vulkan_vkSamplerAddressMode(pSamplerDesc->sampleModeV, &createInfo.addressModeV)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    if (!kgfx_vulkan_vkSamplerAddressMode(pSamplerDesc->sampleModeW, &createInfo.addressModeW)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    createInfo.mipLodBias = pSamplerDesc->mipLodBias;
+    createInfo.anisotropyEnable = (pSamplerDesc->anisotropy != 1.0f);
+    createInfo.maxAnisotropy = pSamplerDesc->anisotropy;
+    createInfo.compareEnable = VK_FALSE;
+    createInfo.compareOp = VK_COMPARE_OP_NEVER;
+    createInfo.minLod = pSamplerDesc->minLod;
+    createInfo.maxLod = pSamplerDesc->maxLod;
+    if (!kgfx_vulkan_vkBorderColor(pSamplerDesc->border, &createInfo.borderColor)) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    VkSampler vkSampler;
+    if (vkCreateSampler(vulkanDevice->vk.device, &createInfo, NULL, &vkSampler) != VK_SUCCESS) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    KGFXSampler_Vulkan_t* sampler = malloc(sizeof(KGFXSampler_Vulkan_t));
+    if (sampler == NULL) {
+        /* TODO: crash out safely */
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    memset(sampler, 0, sizeof(KGFXSampler_Vulkan_t));
+    
+    sampler->obj.api = KGFX_INSTANCE_API_VULKAN;
+    sampler->obj.instance = device->instance;
+    sampler->device = device;
+    sampler->vk.sampler = vkSampler;
+
+    *pSampler = &sampler->obj;
+    return KGFX_RESULT_SUCCESS;
+}
+
+void kgfxDestroySampler_vulkan(KGFXSampler sampler) {
+    KGFXSampler_Vulkan_t* vulkanSampler = (KGFXSampler_Vulkan_t*) sampler;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSampler->device;
+    vkDestroySampler(vulkanDevice->vk.device, vulkanSampler->vk.sampler, NULL);
+    free(sampler);
 }
 
 KGFXResult kgfxCreateShaderSPIRV_vulkan(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
@@ -5148,6 +5245,15 @@ KGFXResult kgfxDownloadTexture_d3d12(KGFXTexture texture, void* pData, uint64_t 
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
+/* (medium) TODO: D3D12 samplers */
+KGFXResult kgfxCreateSampler_d3d12(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroySampler_d3d12(KGFXSampler sampler) {
+    return;
+}
+
 /* (medium) TODO: D3D12 shaders */
 KGFXResult kgfxCreateShaderSPIRV_d3d12(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
@@ -5479,6 +5585,15 @@ KGFXResult kgfxUploadTexture_metal(KGFXTexture texture, void* pData, uint64_t si
 
 KGFXResult kgfxDownloadTexture_metal(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+/* (low-medium) TODO: Metal samplers */
+KGFXResult kgfxCreateSampler_metal(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroySampler_metal(KGFXSampler sampler) {
+    return;
 }
 
 /* (low-medium) TODO: Metal shaders */
@@ -5995,6 +6110,55 @@ KGFXResult kgfxDownloadTexture(KGFXTexture texture, void* pData, uint64_t size, 
 #endif /* KGFX_METAL */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+KGFXResult kgfxCreateSampler(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler) {
+    if (device == NULL || pSamplerDesc == NULL || pSampler == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    switch (device->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            return kgfxCreateSampler_vulkan(device, pSamplerDesc, pSampler);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            return kgfxCreateSampler_d3d12(device, pSamplerDesc, pSampler);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            return kgfxCreateSampler_metal(device, pSamplerDesc, pSampler);
+#endif /* KGFX_METAL */
+        default:
+            return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+}
+
+void kgfxDestroySampler(KGFXSampler sampler) {
+    if (sampler == NULL) {
+        return;
+    }
+
+    switch (sampler->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxDestroySampler_vulkan(sampler);
+            break;
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxDestroySampler_d3d12(sampler);
+            break;
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxDestroySampler_metal(sampler);
+            break;
+#endif /* KGFX_METAL */
+        default:
+            break;
     }
 }
 
