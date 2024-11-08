@@ -36,6 +36,7 @@ KGFX_DEFINE_HANDLE(KGFXInstance);
 KGFX_DEFINE_HANDLE(KGFXDevice);
 KGFX_DEFINE_HANDLE(KGFXBuffer);
 KGFX_DEFINE_HANDLE(KGFXTexture);
+KGFX_DEFINE_HANDLE(KGFXSampler);
 KGFX_DEFINE_HANDLE(KGFXFramebuffer);
 KGFX_DEFINE_HANDLE(KGFXSwapchain);
 KGFX_DEFINE_HANDLE(KGFXQueue);
@@ -387,6 +388,27 @@ typedef enum KGFXClearValueType {
     KGFX_CLEAR_VALUE_TYPE_DEPTH_STENCIL = 3,
 } KGFXClearValueType;
 
+typedef enum KGFXTextureFilter {
+    KGFX_TEXTURE_FILTER_NEAREST = 1,
+    KGFX_TEXTURE_FILTER_LINEAR = 2,
+} KGFXTextureFilter;
+
+typedef enum KGFXSampleMode {
+    KGFX_SAMPLE_MODE_CLAMP = 1,
+    KGFX_SAMPLE_MODE_REPEAT = 2,
+    KGFX_SAMPLE_MODE_CLAMP_BORDER = 3,
+    KGFX_SAMPLE_MODE_MIRROR = 4,
+} KGFXSampleMode;
+
+typedef enum KGFXSampleBorder {
+    KGFX_SAMPLE_BORDER_TRANSPARENT_BLACK_FLOAT = 1,
+    KGFX_SAMPLE_BORDER_TRANSPARENT_BLACK_INT = 2,
+    KGFX_SAMPLE_BORDER_OPAQUE_BLACK_FLOAT = 3,
+    KGFX_SAMPLE_BORDER_OPAQUE_BLACK_INT = 4,
+    KGFX_SAMPLE_BORDER_OPAQUE_WHITE_FLOAT = 5,
+    KGFX_SAMPLE_BORDER_OPAQUE_WHITE_INT = 6,
+} KGFXSampleBorder;
+
 typedef struct KGFXAdapterDetails {
     KGFXAdapterType type;
     KGFXAdapterVendor vendor;
@@ -593,6 +615,20 @@ typedef struct KGFXTextureTransferDesc {
     uint32_t textureLayerCount;
 } KGFXTextureTransferDesc;
 
+typedef struct KGFXSamplerDesc {
+    KGFXTextureFilter magFilter;
+    KGFXTextureFilter minFilter;
+    KGFXTextureFilter mipMapFilter;
+    KGFXSampleMode sampleModeU;
+    KGFXSampleMode sampleModeV;
+    KGFXSampleMode sampleModeW;
+    KGFXSampleBorder border;
+    float anisotropy;
+    float mipLodBias;
+    float maxLod;
+    float minLod;
+} KGFXSamplerDesc;
+
 typedef void (*KGFXDebugCallbackPFN)(KGFXInstance instance, KGFXDebugSeverity severity, KGFXDebugSource source, const char* message);
 
 KGFX_API KGFXResult kgfxCreateInstance(KGFXInstanceAPI api, KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance);
@@ -618,6 +654,9 @@ KGFX_API void kgfxDestroyTexture(KGFXTexture texture);
 
 KGFX_API KGFXResult kgfxUploadTexture(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
 KGFX_API KGFXResult kgfxDownloadTexture(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+
+KGFX_API KGFXResult kgfxCreateSampler(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
+KGFX_API void kgfxDestroySampler(KGFXSampler sampler);
 
 /* (high) TODO: more resource */
 
@@ -649,8 +688,12 @@ KGFX_API void kgfxCmdBindRenderTargets(KGFXCommandList commandList, uint32_t ren
 KGFX_API void kgfxCmdBeginRendering(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 KGFX_API void kgfxCmdEndRendering(KGFXCommandList commandList);
 
-/* TODO: command bind uniforms */
 KGFX_API void kgfxCmdBindUniformBuffer(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+KGFX_API void kgfxCmdBindStorageBuffer(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+KGFX_API void kgfxCmdBindUniformTexture(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+KGFX_API void kgfxCmdBindStorageTexture(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+KGFX_API void kgfxCmdBindSampler(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
+
 KGFX_API void kgfxCmdBindIndexBuffer(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 KGFX_API void kgfxCmdBindVertexBuffers(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 
