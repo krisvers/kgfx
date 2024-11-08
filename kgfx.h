@@ -943,7 +943,10 @@ typedef struct KGFXInstance_Vulkan_t {
     
     struct {
         VkDebugUtilsMessengerEXT debugUtilsMessenger;
-        PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT;
+        struct {
+            PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT;
+            PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
+        } functions;
         
         VkInstance instance;        
         KGFX_LIST(VkPhysicalDevice) physicalDevices;
@@ -1983,7 +1986,7 @@ VkBool32 kgfx_vulkan_debugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlag
 
 void kgfx_vulkan_debugNameObject(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType type, void* handle, const char* name) {
     KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
-    if (vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT != NULL) {
+    if (vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT != NULL) {
         VkDebugUtilsObjectNameInfoEXT nameInfo;
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
@@ -1991,13 +1994,13 @@ void kgfx_vulkan_debugNameObject(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType
         nameInfo.objectHandle = (uint64_t) handle;
         nameInfo.pObjectName = name;
 
-        vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+        vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
     }
 }
 
 void kgfx_vulkan_debugNameObjectWithID(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType type, void* handle, const char* name, uint32_t id) {
     KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
-    if (vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT != NULL) {
+    if (vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT != NULL) {
         VkDebugUtilsObjectNameInfoEXT nameInfo;
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
@@ -2007,13 +2010,13 @@ void kgfx_vulkan_debugNameObjectWithID(KGFXDevice_Vulkan_t* vulkanDevice, VkObje
         char buffer[256];
         snprintf(buffer, 256, "%s %u", name, id);
         nameInfo.pObjectName = buffer;
-        vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+        vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
     }
 }
 
 void kgfx_vulkan_debugNameObjectPrintf(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType type, void* handle, const char* fmt, ...) {
     KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
-    if (vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT != NULL) {
+    if (vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT != NULL) {
         VkDebugUtilsObjectNameInfoEXT nameInfo;
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
@@ -2026,7 +2029,7 @@ void kgfx_vulkan_debugNameObjectPrintf(KGFXDevice_Vulkan_t* vulkanDevice, VkObje
         va_start(args, fmt);
         vsnprintf(buffer, 256, fmt, args);
         nameInfo.pObjectName = buffer;
-        vulkanInstance->vk.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
+        vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT(vulkanDevice->vk.device, &nameInfo);
         va_end(args);
     }
 }
@@ -2296,7 +2299,14 @@ KGFXResult kgfxCreateInstance_vulkan(KGFXInstanceCreateFlagBits flags, KGFXInsta
         }
         
         PFN_vkSetDebugUtilsObjectNameEXT setDbgName = (PFN_vkSetDebugUtilsObjectNameEXT) vkGetInstanceProcAddr(instance->vk.instance, "vkSetDebugUtilsObjectNameEXT");
-        instance->vk.vkSetDebugUtilsObjectNameEXT = setDbgName;
+        instance->vk.functions.vkSetDebugUtilsObjectNameEXT = setDbgName;
+    }
+    
+    instance->vk.functions.vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR) vkGetInstanceProcAddr(instance->vk.instance, "vkCmdPushDescriptorSetKHR");
+    if (instance->vk.functions.vkCmdPushDescriptorSetKHR == NULL) {
+        vkDestroyInstance(vkInstance, NULL);
+        free(instance);
+        return KGFX_RESULT_ERROR_UNKNOWN;
     }
     
     uint32_t adapterCount = 0;
@@ -2604,7 +2614,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     KGFX_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, "VK_KHR_portability_subset", KGFX_TRUE);
 #endif /* #ifdef __APPLE__ */
 
-    KGFX_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME, KGFX_TRUE);
+    KGFX_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, "VK_KHR_push_descriptor", KGFX_TRUE);
     
     if (vulkanInstance->flags & KGFX_INSTANCE_CREATE_FLAG_GRAPHICAL) {
         KGFX_ADD_EXTENSION(requestedExtensionList, requestedExtensionIndex, VK_KHR_SWAPCHAIN_EXTENSION_NAME, KGFX_TRUE);
@@ -3769,7 +3779,7 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
-    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_RENDER_PASS, vkRenderPass, "KGFX Render Pass %u", vulkanDevice->vk.currentRenderPassID++);
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_RENDER_PASS, vkRenderPass, "KGFX Render Pass for Graphics Pipeline %u", vulkanDevice->vk.currentGraphicsPipelineID);
 
     VkFramebufferAttachmentsCreateInfo framebufferAttachmentsCreateInfo;
     framebufferAttachmentsCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO_KHR;
@@ -3794,11 +3804,14 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
-    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_FRAMEBUFFER, vkFramebuffer, "KGFX Framebuffer %u", vulkanDevice->vk.currentFramebufferID++);
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_FRAMEBUFFER, vkFramebuffer, "KGFX Framebuffer for Graphics Pipeline %u", vulkanDevice->vk.currentGraphicsPipelineID);
     KGFX_LIST_FREE(framebufferAttachmentImageInfos);
     
     KGFX_LIST(VkDescriptorSetLayoutBinding) descSetLayoutBindings;
     KGFX_LIST_INIT(descSetLayoutBindings, pPipelineDesc->uniformSignatureDesc.uniformCount, VkDescriptorSetLayoutBinding);
+    
+    KGFX_LIST(VkDescriptorPoolSize) descPoolSizes = { NULL, 0 };
+    KGFX_LIST_INIT(descPoolSizes, pPipelineDesc->uniformSignatureDesc.uniformCount, VkDescriptorPoolSize);
     
     for (uint32_t i = 0; i < pPipelineDesc->uniformSignatureDesc.uniformCount; ++i) {
         if (pPipelineDesc->uniformSignatureDesc.pUniforms[i].binding.type != KGFX_UNIFORM_BIND_POINT_TYPE_BINDING_INDEX) {
@@ -3819,12 +3832,18 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         }
         
         descSetLayoutBindings.data[i].pImmutableSamplers = NULL;
+        
+        if (!kgfx_vulkan_vkDescriptorType(pPipelineDesc->uniformSignatureDesc.pUniforms[i].resourceType, &descPoolSizes.data[i].type)) {
+            /* TODO: crash out safely */
+            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+        descPoolSizes.data[i].descriptorCount = 1;
     }
     
     VkDescriptorSetLayoutCreateInfo descLayoutCreateInfo;
     descLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     descLayoutCreateInfo.pNext = NULL;
-    descLayoutCreateInfo.flags = 0;
+    descLayoutCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
     descLayoutCreateInfo.bindingCount = descSetLayoutBindings.length;
     descLayoutCreateInfo.pBindings = descSetLayoutBindings.data;
     
@@ -3834,7 +3853,7 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
-    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, vkDescLayout, "KGFX Descriptor Set Layout %u", vulkanDevice->vk.currentDescriptorSetLayoutID++);
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, vkDescLayout, "KGFX Descriptor Set Layout for Graphics Pipeline %u", vulkanDevice->vk.currentGraphicsPipelineID);
     
     VkPipelineLayoutCreateInfo layoutCreateInfo;
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -3851,7 +3870,7 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
-    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_PIPELINE_LAYOUT, vkPipelineLayout, "KGFX Pipeline Layout %u", vulkanDevice->vk.currentPipelineLayoutID++);
+    kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_PIPELINE_LAYOUT, vkPipelineLayout, "KGFX Pipeline Layout for Graphics Pipeline %u", vulkanDevice->vk.currentGraphicsPipelineID);
     
     VkPipelineMultisampleStateCreateInfo msCreateInfo;
     msCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -4318,7 +4337,39 @@ void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList) {
 
 /* (high) TODO: Vulkan commands */
 void kgfxCmdBindUniformBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    
+    VkDescriptorBufferInfo bufferInfo;
+    bufferInfo.buffer = vulkanBuffer->vk.buffer;
+    bufferInfo.offset = (VkDeviceSize) offset;
+    bufferInfo.range = (VkDeviceSize) size;
+    
+    VkWriteDescriptorSet writeSet;
+    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSet.pNext = NULL;
+    writeSet.dstSet = NULL;
+    writeSet.dstBinding = binding.bindPoint.bindingIndex.binding;
+    writeSet.dstArrayElement = 0;
+    writeSet.descriptorCount = 1;
+    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writeSet.pImageInfo = NULL;
+    writeSet.pBufferInfo = &bufferInfo;
+    writeSet.pTexelBufferView = NULL;
+    
+    VkPipelineLayout vkLayout;
+    if (vulkanCommandList->bound.graphicsPipeline != NULL) {
+        vkLayout = vulkanCommandList->bound.graphicsPipeline->vk.pipelineLayout;
+    } else {
+        /* TODO: crash out safely */
+        return;
+    }
+    
+    vulkanInstance->vk.functions.vkCmdPushDescriptorSetKHR(vulkanCommandList->vk.commandBuffer, (vulkanCommandList->bound.graphicsPipeline != NULL) ? VK_PIPELINE_BIND_POINT_GRAPHICS : VK_PIPELINE_BIND_POINT_COMPUTE, vkLayout, 0, 1, &writeSet);
 }
 
 void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {

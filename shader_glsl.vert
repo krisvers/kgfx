@@ -5,7 +5,11 @@ layout (location = 1) in vec3 inColor;
 
 layout (location = 0) out vec3 vertexColor;
 
+layout (binding = 0) uniform UniformData {
+    mat4x4 mvp;
+} uniformBuffer;
+
 void main() {
-    gl_Position = vec4(inPosition, 1.0);
+    gl_Position = uniformBuffer.mvp * vec4(inPosition, 1.0);
     vertexColor = inColor;
 }

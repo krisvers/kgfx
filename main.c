@@ -390,7 +390,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     
     while (!glfwWindowShouldClose(window)) {
         mat4x4_identity(pUniformData->mvp);
-        mat4x4_rotate_Z(pUniformData->mvp, pUniformData->mvp, (float) glfwGetTime());
+        mat4x4_rotate_Z(pUniformData->mvp, pUniformData->mvp, glfwGetTime());
         
         kgfxResetCommandList(commandList);
         
