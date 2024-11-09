@@ -299,10 +299,18 @@ typedef enum KGFXDimensionType {
 typedef enum KGFXBlendFactor {
     KGFX_BLEND_FACTOR_ZERO = 1,
     KGFX_BLEND_FACTOR_ONE = 2,
-    KGFX_BLEND_FACTOR_SOURCE = 3,
-    KGFX_BLEND_FACTOR_DESTINATION = 4,
-    KGFX_BLEND_FACTOR_INVERTED_SOURCE = 5,
-    KGFX_BLEND_FACTOR_INVERTED_DESTINATION = 6,
+    KGFX_BLEND_FACTOR_SRC_COLOR = 3,
+    KGFX_BLEND_FACTOR_DST_COLOR = 4,
+    KGFX_BLEND_FACTOR_INVERTED_SRC_COLOR = 5,
+    KGFX_BLEND_FACTOR_INVERTED_DST_COLOR = 6,
+    KGFX_BLEND_FACTOR_SRC_ALPHA = 7,
+    KGFX_BLEND_FACTOR_DST_ALPHA = 8,
+    KGFX_BLEND_FACTOR_INVERTED_SRC_ALPHA = 9,
+    KGFX_BLEND_FACTOR_INVERTED_DST_ALPHA = 10,
+    KGFX_BLEND_FACTOR_CONST_COLOR = 11,
+    KGFX_BLEND_FACTOR_INVERTED_CONST_COLOR = 12,
+    KGFX_BLEND_FACTOR_CONST_ALPHA = 13,
+    KGFX_BLEND_FACTOR_INVERTED_CONST_ALPHA = 14,
 } KGFXBlendFactor;
 
 typedef enum KGFXColorMaskFlag {
@@ -603,8 +611,6 @@ typedef struct KGFXTextureDesc {
 } KGFXTextureDesc;
 
 typedef struct KGFXTextureTransferDesc {
-    uint32_t bufferWidth;
-    uint32_t bufferHeight;
     uint32_t textureX;
     uint32_t textureY;
     uint32_t textureZ;
@@ -624,7 +630,6 @@ typedef struct KGFXSamplerDesc {
     KGFXSampleMode sampleModeW;
     KGFXSampleBorder border;
     float anisotropy;
-    float mipLodBias;
     float maxLod;
     float minLod;
 } KGFXSamplerDesc;
@@ -801,7 +806,13 @@ void kgfxCmdSetViewportAndScissor_vulkan(KGFXCommandList commandList, uint32_t v
 void kgfxCmdBindRenderTargets_vulkan(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
 void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 void kgfxCmdEndRendering_vulkan(KGFXCommandList commandList);
+
 void kgfxCmdBindUniformBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindStorageBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindUniformTexture_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindStorageTexture_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindSampler_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
+
 void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
@@ -876,7 +887,12 @@ void kgfxCmdSetViewportAndScissor_d3d12(KGFXCommandList commandList, uint32_t vi
 void kgfxCmdBindRenderTargets_d3d12(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
 void kgfxCmdBeginRendering_d3d12(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 void kgfxCmdEndRendering_d3d12(KGFXCommandList commandList);
+
 void kgfxCmdBindUniformBuffer_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindStorageBuffer_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindUniformTexture_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindStorageTexture_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindSampler_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
 void kgfxCmdBindIndexBuffer_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 void kgfxCmdBindVertexBuffers_d3d12(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 void kgfxCmdDraw(KGFXCommandList _d3d12commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
@@ -947,7 +963,12 @@ void kgfxCmdSetViewportAndScissor_metal(KGFXCommandList commandList, uint32_t vi
 void kgfxCmdBindRenderTargets_metal(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
 void kgfxCmdBeginRendering_metal(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
 void kgfxCmdEndRendering_metal(KGFXCommandList commandList);
+
 void kgfxCmdBindUniformBuffer_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindStorageBuffer_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindUniformTexture_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindStorageTexture_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindSampler_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
 void kgfxCmdBindIndexBuffer_metal(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
 void kgfxCmdBindVertexBuffers_metal(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
 void kgfxCmdDraw_metal(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
@@ -1706,6 +1727,84 @@ KGFXBool kgfx_vulkan_vkImageLayout(KGFXTextureLayout layout, VkImageLayout* pLay
     return KGFX_TRUE;
 }
 
+KGFXBool kgfx_vulkan_vkBorderColor(KGFXSampleBorder border, VkBorderColor* pBorder) {
+    switch (border) {
+        case KGFX_SAMPLE_BORDER_TRANSPARENT_BLACK_FLOAT:
+            *pBorder = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+            break;
+        case KGFX_SAMPLE_BORDER_TRANSPARENT_BLACK_INT:
+            *pBorder = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+            break;
+        case KGFX_SAMPLE_BORDER_OPAQUE_BLACK_FLOAT:
+            *pBorder = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+            break;
+        case KGFX_SAMPLE_BORDER_OPAQUE_BLACK_INT:
+            *pBorder = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+            break;
+        case KGFX_SAMPLE_BORDER_OPAQUE_WHITE_FLOAT:
+            *pBorder = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+            break;
+        case KGFX_SAMPLE_BORDER_OPAQUE_WHITE_INT:
+            *pBorder = VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+    
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_vulkan_vkFilter(KGFXTextureFilter filter, VkFilter* pFilter) {
+    switch (filter) {
+        case KGFX_TEXTURE_FILTER_NEAREST:
+            *pFilter = VK_FILTER_NEAREST;
+            break;
+        case KGFX_TEXTURE_FILTER_LINEAR:
+            *pFilter = VK_FILTER_LINEAR;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+    
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_vulkan_vkSamplerMipmapMode(KGFXTextureFilter filter, VkSamplerMipmapMode* pMode) {
+    switch (filter) {
+        case KGFX_TEXTURE_FILTER_NEAREST:
+            *pMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            break;
+        case KGFX_TEXTURE_FILTER_LINEAR:
+            *pMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+    
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_vulkan_vkSamplerAddressMode(KGFXSampleMode mode, VkSamplerAddressMode* pMode) {
+    switch (mode) {
+        case KGFX_SAMPLE_MODE_CLAMP:
+            *pMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            break;
+        case KGFX_SAMPLE_MODE_REPEAT:
+            *pMode = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            break;
+        case KGFX_SAMPLE_MODE_CLAMP_BORDER:
+            *pMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+            break;
+        case KGFX_SAMPLE_MODE_MIRROR:
+            *pMode = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+    
+    return KGFX_TRUE;
+}
+
 KGFXBool kgfx_vulkan_vkBlendOp(KGFXBlendOp op, VkBlendOp* pOp) {
     switch (op) {
         case KGFX_BLEND_OP_ADD:
@@ -1730,7 +1829,7 @@ KGFXBool kgfx_vulkan_vkBlendOp(KGFXBlendOp op, VkBlendOp* pOp) {
     return KGFX_TRUE;
 }
 
-KGFXBool kgfx_vulkan_vkBlendFactor(KGFXBlendFactor factor, VkBlendFactor* pFactor, KGFXBool isAlpha) {
+KGFXBool kgfx_vulkan_vkBlendFactor(KGFXBlendFactor factor, VkBlendFactor* pFactor) {
     switch (factor) {
         case KGFX_BLEND_FACTOR_ZERO:
             *pFactor = VK_BLEND_FACTOR_ZERO;
@@ -1738,17 +1837,41 @@ KGFXBool kgfx_vulkan_vkBlendFactor(KGFXBlendFactor factor, VkBlendFactor* pFacto
         case KGFX_BLEND_FACTOR_ONE:
             *pFactor = VK_BLEND_FACTOR_ONE;
             break;
-        case KGFX_BLEND_FACTOR_SOURCE:
-            *pFactor = (isAlpha) ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_SRC_COLOR;
+        case KGFX_BLEND_FACTOR_SRC_COLOR:
+            *pFactor = VK_BLEND_FACTOR_SRC_COLOR;
             break;
-        case KGFX_BLEND_FACTOR_DESTINATION:
-            *pFactor = (isAlpha) ? VK_BLEND_FACTOR_DST_ALPHA : VK_BLEND_FACTOR_DST_COLOR;
+        case KGFX_BLEND_FACTOR_DST_COLOR:
+            *pFactor = VK_BLEND_FACTOR_DST_COLOR;
             break;
-        case KGFX_BLEND_FACTOR_INVERTED_SOURCE:
-            *pFactor = (isAlpha) ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+        case KGFX_BLEND_FACTOR_INVERTED_SRC_COLOR:
+            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
             break;
-        case KGFX_BLEND_FACTOR_INVERTED_DESTINATION:
-            *pFactor = (isAlpha) ? VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA : VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+        case KGFX_BLEND_FACTOR_INVERTED_DST_COLOR:
+            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_SRC_ALPHA:
+            *pFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_DST_ALPHA:
+            *pFactor = VK_BLEND_FACTOR_DST_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_SRC_ALPHA:
+            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_DST_ALPHA:
+            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_CONST_COLOR:
+            *pFactor = VK_BLEND_FACTOR_CONSTANT_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_CONST_COLOR:
+            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_CONST_ALPHA:
+            *pFactor = VK_BLEND_FACTOR_CONSTANT_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_CONST_ALPHA:
+            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
             break;
         default:
             return KGFX_FALSE;
@@ -3369,7 +3492,187 @@ void kgfxDestroyTexture_vulkan(KGFXTexture texture) {
 
 /* (high) TODO: Vulkan texture loading operations */
 KGFXResult kgfxUploadTexture_vulkan(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) texture;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanTexture->device;
+    
+    VkBufferCreateInfo createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    createInfo.pNext = NULL;
+    createInfo.flags = 0;
+    createInfo.size = (VkDeviceSize) size;
+    createInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.queueFamilyIndexCount = 0;
+    createInfo.pQueueFamilyIndices = NULL;
+
+    VkBuffer vkBuffer;
+    if (vkCreateBuffer(vulkanDevice->vk.device, &createInfo, NULL, &vkBuffer) != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_BUFFER, vkBuffer, "KGFX Temporary Upload Host Buffer");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(vulkanDevice->vk.device, vkBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo;
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = NULL;
+    allocInfo.allocationSize = memRequirements.size;
+
+    if (!kgfx_vulkan_memoryType(vulkanDevice->vk.physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocInfo.memoryTypeIndex)) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    VkDeviceMemory vkMemory;
+    if (vkAllocateMemory(vulkanDevice->vk.device, &allocInfo, NULL, &vkMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_DEVICE_MEMORY, vkMemory, "KGFX Temporary Upload Host Buffer Memory");
+
+    if (vkBindBufferMemory(vulkanDevice->vk.device, vkBuffer, vkMemory, 0) != VK_SUCCESS) {
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    void* pMapped;
+    if (vkMapMemory(vulkanDevice->vk.device, vkMemory, 0, size, 0, &pMapped) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    memcpy(pMapped, pData, size);
+    vkUnmapMemory(vulkanDevice->vk.device, vkMemory);
+    
+    VkCommandPoolCreateInfo poolCreateInfo;
+    poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolCreateInfo.pNext = NULL;
+    poolCreateInfo.flags = 0;
+    poolCreateInfo.queueFamilyIndex = vulkanDevice->vk.transferQueueIndex;
+    
+    VkCommandPool vkCmdPool;
+    if (vkCreateCommandPool(vulkanDevice->vk.device, &poolCreateInfo, NULL, &vkCmdPool) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_COMMAND_POOL, vkCmdPool, "KGFX Temporary Upload Buffer Copy Command Pool");
+    
+    VkCommandBufferAllocateInfo cmdAllocInfo;
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.pNext = NULL;
+    cmdAllocInfo.commandPool = vkCmdPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+    
+    VkCommandBuffer vkCmdBuffer;
+    if (vkAllocateCommandBuffers(vulkanDevice->vk.device, &cmdAllocInfo, &vkCmdBuffer) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        vkDestroyCommandPool(vulkanDevice->vk.device, vkCmdPool, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    kgfx_vulkan_debugNameObject(vulkanDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, vkCmdBuffer, "KGFX Temporary Upload Buffer Copy Command Buffer");
+    
+    VkCommandBufferBeginInfo beginInfo;
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.pNext = NULL;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    beginInfo.pInheritanceInfo = NULL;
+    
+    if (vkBeginCommandBuffer(vkCmdBuffer, &beginInfo) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        vkFreeCommandBuffers(vulkanDevice->vk.device, vkCmdPool, 1, &vkCmdBuffer);
+        vkDestroyCommandPool(vulkanDevice->vk.device, vkCmdPool, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    VkBufferImageCopy copy;
+    copy.bufferOffset = 0;
+    copy.bufferRowLength = 0;
+    copy.bufferImageHeight = 0;
+    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    if (vulkanTexture->format == KGFX_FORMAT_D16_UNORM || vulkanTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT || vulkanTexture->format == KGFX_FORMAT_D32_FLOAT) {
+        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    }
+    
+    if (vulkanTexture->format == KGFX_FORMAT_D24_UNORM_S8_UINT) {
+        copy.imageSubresource.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    
+    KGFXCommandPool_Vulkan_t vulkanCommandPool;
+    vulkanCommandPool.obj.api = KGFX_INSTANCE_API_VULKAN;
+    vulkanCommandPool.obj.instance = texture->instance;
+    vulkanCommandPool.device = vulkanTexture->device;
+    vulkanCommandPool.maxCommandLists = 1;
+    vulkanCommandPool.currentListCount = 1;
+    vulkanCommandPool.vk.queue = vulkanDevice->vk.transferQueue;
+    vulkanCommandPool.vk.queueFamilyIndex = vulkanDevice->vk.transferQueueIndex;
+    vulkanCommandPool.vk.commandPool = vkCmdPool;
+    
+    KGFXCommandList_Vulkan_t vulkanCommandList;
+    vulkanCommandList.obj.api = KGFX_INSTANCE_API_VULKAN;
+    vulkanCommandList.obj.instance = texture->instance;
+    vulkanCommandList.commandPool = &vulkanCommandPool.obj;
+    vulkanCommandList.vk.commandBuffer = vkCmdBuffer;
+    vulkanCommandList.vk.inUseFence = NULL;
+    KGFX_LIST_ZERO(vulkanCommandList.bound.renderTargets);
+    vulkanCommandList.bound.depthStencilTarget = NULL;
+    vulkanCommandList.bound.graphicsPipeline = NULL;
+    
+    kgfx_vulkan_transitionTexture(&vulkanCommandList, vulkanTexture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    
+    copy.imageSubresource.mipLevel = 0;
+    copy.imageSubresource.baseArrayLayer = pTransferDesc->textureFirstLayer;
+    copy.imageSubresource.layerCount = pTransferDesc->textureLayerCount;
+    copy.imageOffset.x = pTransferDesc->textureX;
+    copy.imageOffset.y = pTransferDesc->textureY;
+    copy.imageOffset.z = pTransferDesc->textureZ;
+    copy.imageExtent.width = pTransferDesc->textureWidth;
+    copy.imageExtent.height = pTransferDesc->textureHeight;
+    copy.imageExtent.depth = pTransferDesc->textureDepth;
+    
+    vkCmdCopyBufferToImage(vkCmdBuffer, vkBuffer, vulkanTexture->vk.image, vulkanTexture->vk.layout, 1, &copy);
+    
+    if (vkEndCommandBuffer(vkCmdBuffer) != VK_SUCCESS) {
+        vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+        vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+        vkFreeCommandBuffers(vulkanDevice->vk.device, vkCmdPool, 1, &vkCmdBuffer);
+        vkDestroyCommandPool(vulkanDevice->vk.device, vkCmdPool, NULL);
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    VkSubmitInfo submitInfo;
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.pNext = NULL;
+    submitInfo.waitSemaphoreCount = 0;
+    submitInfo.pWaitSemaphores = NULL;
+    submitInfo.pWaitDstStageMask = NULL;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &vkCmdBuffer;
+    submitInfo.signalSemaphoreCount = 0;
+    submitInfo.pSignalSemaphores = NULL;
+    
+    VkResult vkResult = vkQueueSubmit(vulkanDevice->vk.transferQueue, 1, &submitInfo, NULL);
+    vkQueueWaitIdle(vulkanDevice->vk.transferQueue);
+    
+    vkDestroyBuffer(vulkanDevice->vk.device, vkBuffer, NULL);
+    vkFreeMemory(vulkanDevice->vk.device, vkMemory, NULL);
+    vkFreeCommandBuffers(vulkanDevice->vk.device, vkCmdPool, 1, &vkCmdBuffer);
+    vkDestroyCommandPool(vulkanDevice->vk.device, vkCmdPool, NULL);
+    if (vkResult != VK_SUCCESS) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    return KGFX_RESULT_SUCCESS;
 }
 
 KGFXResult kgfxDownloadTexture_vulkan(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
@@ -3414,13 +3717,14 @@ KGFXResult kgfxCreateSampler_vulkan(KGFXDevice device, const KGFXSamplerDesc* pS
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    createInfo.mipLodBias = pSamplerDesc->mipLodBias;
+    createInfo.mipLodBias = 0.0f;
     createInfo.anisotropyEnable = (pSamplerDesc->anisotropy != 1.0f);
     createInfo.maxAnisotropy = pSamplerDesc->anisotropy;
     createInfo.compareEnable = VK_FALSE;
     createInfo.compareOp = VK_COMPARE_OP_NEVER;
     createInfo.minLod = pSamplerDesc->minLod;
     createInfo.maxLod = pSamplerDesc->maxLod;
+    createInfo.unnormalizedCoordinates = VK_FALSE;
     if (!kgfx_vulkan_vkBorderColor(pSamplerDesc->border, &createInfo.borderColor)) {
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
@@ -3432,7 +3736,7 @@ KGFXResult kgfxCreateSampler_vulkan(KGFXDevice device, const KGFXSamplerDesc* pS
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
     
-    KGFXSampler_Vulkan_t* sampler = malloc(sizeof(KGFXSampler_Vulkan_t));
+    KGFXSampler_Vulkan_t* sampler = (KGFXSampler_Vulkan_t*) malloc(sizeof(KGFXSampler_Vulkan_t));
     if (sampler == NULL) {
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
@@ -3723,13 +4027,13 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
     for (uint32_t i = 0; i < pPipelineDesc->renderTargetCount; ++i) {
         colorAttachmentBlends.data[i].blendEnable = pPipelineDesc->pRenderTargetDescs[i].enableBlending;
         colorAttachmentBlends.data[i].srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].srcColorBlendFactor, &colorAttachmentBlends.data[i].srcColorBlendFactor, KGFX_FALSE) && colorAttachmentBlends.data[i].blendEnable) {
+        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].srcColorBlendFactor, &colorAttachmentBlends.data[i].srcColorBlendFactor) && colorAttachmentBlends.data[i].blendEnable) {
             /* TODO: crash out safely */
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
         
         colorAttachmentBlends.data[i].dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].dstColorBlendFactor, &colorAttachmentBlends.data[i].dstColorBlendFactor, KGFX_FALSE) && colorAttachmentBlends.data[i].blendEnable) {
+        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].dstColorBlendFactor, &colorAttachmentBlends.data[i].dstColorBlendFactor) && colorAttachmentBlends.data[i].blendEnable) {
             /* TODO: crash out safely */
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
@@ -3741,13 +4045,13 @@ KGFXResult kgfxCreateGraphicsPipeline_vulkan(KGFXDevice device, const KGFXGraphi
         }
         
         colorAttachmentBlends.data[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].srcAlphaBlendFactor, &colorAttachmentBlends.data[i].srcAlphaBlendFactor, KGFX_TRUE) && colorAttachmentBlends.data[i].blendEnable) {
+        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].srcAlphaBlendFactor, &colorAttachmentBlends.data[i].srcAlphaBlendFactor) && colorAttachmentBlends.data[i].blendEnable) {
             /* TODO: crash out safely */
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
         
         colorAttachmentBlends.data[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].dstAlphaBlendFactor, &colorAttachmentBlends.data[i].dstAlphaBlendFactor, KGFX_TRUE) && colorAttachmentBlends.data[i].blendEnable) {
+        if (!kgfx_vulkan_vkBlendFactor(pPipelineDesc->pRenderTargetDescs[i].dstAlphaBlendFactor, &colorAttachmentBlends.data[i].dstAlphaBlendFactor) && colorAttachmentBlends.data[i].blendEnable) {
             /* TODO: crash out safely */
             return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
         }
@@ -4499,6 +4803,89 @@ void kgfxCmdBindUniformBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBin
     writeSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writeSet.pImageInfo = NULL;
     writeSet.pBufferInfo = &bufferInfo;
+    writeSet.pTexelBufferView = NULL;
+    
+    VkPipelineLayout vkLayout;
+    if (vulkanCommandList->bound.graphicsPipeline != NULL) {
+        vkLayout = vulkanCommandList->bound.graphicsPipeline->vk.pipelineLayout;
+    } else {
+        /* TODO: crash out safely */
+        return;
+    }
+    
+    vulkanInstance->vk.functions.vkCmdPushDescriptorSetKHR(vulkanCommandList->vk.commandBuffer, (vulkanCommandList->bound.graphicsPipeline != NULL) ? VK_PIPELINE_BIND_POINT_GRAPHICS : VK_PIPELINE_BIND_POINT_COMPUTE, vkLayout, 0, 1, &writeSet);
+}
+
+/* (high) TODO: Vulkan resource binding */
+void kgfxCmdBindStorageBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    return;
+}
+
+void kgfxCmdBindUniformTexture_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    
+    KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) texture;
+    
+    kgfx_vulkan_transitionTexture(vulkanCommandList, vulkanTexture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 0, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    
+    VkDescriptorImageInfo imageInfo;
+    imageInfo.sampler = NULL;
+    imageInfo.imageView = vulkanTexture->vk.imageView;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    VkWriteDescriptorSet writeSet;
+    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSet.pNext = NULL;
+    writeSet.dstSet = NULL;
+    writeSet.dstBinding = binding.bindPoint.bindingIndex.binding;
+    writeSet.dstArrayElement = 0;
+    writeSet.descriptorCount = 1;
+    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writeSet.pImageInfo = &imageInfo;
+    writeSet.pBufferInfo = NULL;
+    writeSet.pTexelBufferView = NULL;
+    
+    VkPipelineLayout vkLayout;
+    if (vulkanCommandList->bound.graphicsPipeline != NULL) {
+        vkLayout = vulkanCommandList->bound.graphicsPipeline->vk.pipelineLayout;
+    } else {
+        /* TODO: crash out safely */
+        return;
+    }
+    
+    vulkanInstance->vk.functions.vkCmdPushDescriptorSetKHR(vulkanCommandList->vk.commandBuffer, (vulkanCommandList->bound.graphicsPipeline != NULL) ? VK_PIPELINE_BIND_POINT_GRAPHICS : VK_PIPELINE_BIND_POINT_COMPUTE, vkLayout, 0, 1, &writeSet);
+}
+
+void kgfxCmdBindStorageTexture_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    return;
+}
+
+void kgfxCmdBindSampler_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler) {
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    
+    KGFXSampler_Vulkan_t* vulkanSampler = (KGFXSampler_Vulkan_t*) sampler;
+    
+    VkDescriptorImageInfo imageInfo;
+    imageInfo.sampler = vulkanSampler->vk.sampler;
+    imageInfo.imageView = NULL;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    VkWriteDescriptorSet writeSet;
+    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSet.pNext = NULL;
+    writeSet.dstSet = NULL;
+    writeSet.dstBinding = binding.bindPoint.bindingIndex.binding;
+    writeSet.dstArrayElement = 0;
+    writeSet.descriptorCount = 1;
+    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    writeSet.pImageInfo = &imageInfo;
+    writeSet.pBufferInfo = NULL;
     writeSet.pTexelBufferView = NULL;
     
     VkPipelineLayout vkLayout;
@@ -5342,6 +5729,23 @@ void kgfxCmdBindUniformBuffer_d3d12(KGFXCommandList commandList, KGFXUniformBind
     return;
 }
 
+/* (high) TODO: D3D12 resource binding */
+void kgfxCmdBindStorageBuffer_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    return;
+}
+
+void kgfxCmdBindUniformTexture_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    return;
+}
+
+void kgfxCmdBindStorageTexture_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    return;
+}
+
+void kgfxCmdBindSampler_d3d12(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler) {
+    return;
+}
+
 void kgfxCmdBindIndexBuffer_d3d12(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
     return;
 }
@@ -5681,6 +6085,23 @@ void kgfxCmdEndRendering_metal(KGFXCommandList commandList) {
 }
 
 void kgfxCmdBindUniformBuffer_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    return;
+}
+
+/* (high) TODO: Metal resource binding */
+void kgfxCmdBindStorageBuffer_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    return;
+}
+
+void kgfxCmdBindUniformTexture_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    return;
+}
+
+void kgfxCmdBindStorageTexture_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    return;
+}
+
+void kgfxCmdBindSampler_metal(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler) {
     return;
 }
 
@@ -6647,6 +7068,98 @@ void kgfxCmdBindUniformBuffer(KGFXCommandList commandList, KGFXUniformBinding bi
 #ifdef KGFX_METAL
         case KGFX_INSTANCE_API_METAL:
             kgfxCmdBindUniformBuffer_metal(commandList, binding, buffer, offset, size);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindStorageBuffer(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
+    if (commandList == NULL || buffer == NULL || size == 0) {
+        return;
+    }
+    
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindStorageBuffer_vulkan(commandList, binding, buffer, offset, size);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindStorageBuffer_d3d12(commandList, binding, buffer, offset, size);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindStorageBuffer_metal(commandList, binding, buffer, offset, size);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindUniformTexture(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    if (commandList == NULL || texture == NULL) {
+        return;
+    }
+    
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindUniformTexture_vulkan(commandList, binding, texture);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindUniformTexture_d3d12(commandList, binding, texture);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindUniformTexture_metal(commandList, binding, texture);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindStorageTexture(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
+    if (commandList == NULL || texture == NULL) {
+        return;
+    }
+    
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindStorageTexture_vulkan(commandList, binding, texture);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindStorageTexture_d3d12(commandList, binding, texture);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindStorageTexture_metal(commandList, binding, texture);
+#endif /* KGFX_METAL */
+        default:
+            break;
+    }
+}
+
+void kgfxCmdBindSampler(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler) {
+    if (commandList == NULL || sampler == NULL) {
+        return;
+    }
+    
+    switch (commandList->api) {
+#ifdef KGFX_VULKAN
+        case KGFX_INSTANCE_API_VULKAN:
+            kgfxCmdBindSampler_vulkan(commandList, binding, sampler);
+#endif /* KGFX_VULKAN */
+#ifdef KGFX_D3D12
+        case KGFX_INSTANCE_API_D3D12:
+            kgfxCmdBindSampler_d3d12(commandList, binding, sampler);
+#endif /* KGFX_D3D12 */
+#ifdef KGFX_METAL
+        case KGFX_INSTANCE_API_METAL:
+            kgfxCmdBindSampler_metal(commandList, binding, sampler);
 #endif /* KGFX_METAL */
         default:
             break;
