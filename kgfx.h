@@ -5019,7 +5019,7 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
     kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SWAPCHAIN_KHR, vkSwapchain, "KGFX Swapchain %u", vulkanDevice->vk.currentSwapchainID++);
 
     KGFX_LIST(VkImage) images = { NULL, 0 };
-    KGFX_LIST_INIT(images, pSwapchainDesc->imageCount, VkImage);
+    KGFX_LIST_INIT(images, createInfo.minImageCount, VkImage);
 
     if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, NULL) != VK_SUCCESS) {
         vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
@@ -5117,7 +5117,7 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
     vulkanSwapchain->backbuffer.base.vk.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     vulkanSwapchain->backbuffer.base.isSwapchainTexture = KGFX_TRUE;
     vulkanSwapchain->backbuffer.swapchain = vulkanSwapchain;
-    KGFX_LIST_INIT(vulkanSwapchain->internalBackbuffers, pSwapchainDesc->imageCount, KGFXSwapchainTexture_Vulkan_t);
+    KGFX_LIST_INIT(vulkanSwapchain->internalBackbuffers, createInfo.minImageCount, KGFXSwapchainTexture_Vulkan_t);
     for (uint32_t i = 0; i < vulkanSwapchain->internalBackbuffers.length; ++i) {
         vulkanSwapchain->internalBackbuffers.data[i].base.obj.api = KGFX_INSTANCE_API_VULKAN;
         vulkanSwapchain->internalBackbuffers.data[i].base.obj.instance = vulkanDevice->obj.instance;
@@ -5287,19 +5287,19 @@ KGFXResult kgfxCreateSwapchainWayland_vulkan(KGFXDevice device, void* display, v
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
     KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
 
-    KGFX_Vulkan_Surface_t* surface = NULL;
+    KGFX_Vulkan_Surface_t* vulkanSurface = NULL;
     uint32_t surfaceIndex = 0;
     for (uint32_t i = 0; i < vulkanInstance->surfaces.length; ++i) {
         if (display == vulkanInstance->surfaces.data[i].window.wayland.display && surface == vulkanInstance->surfaces.data[i].window.wayland.surface) {
-            surface = &vulkanInstance->surfaces.data[i];
+            vulkanSurface = &vulkanInstance->surfaces.data[i];
             surfaceIndex = i;
             break;
         }
     }
 
-    if (surface == NULL) {
+    if (vulkanSurface == NULL) {
         VkWaylandSurfaceCreateInfoKHR createInfo;
-        createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        createInfo.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
         createInfo.pNext = NULL;
         createInfo.flags = 0;
         createInfo.display = (wl_display*) display;
@@ -5314,9 +5314,9 @@ KGFXResult kgfxCreateSwapchainWayland_vulkan(KGFXDevice device, void* display, v
 
         KGFX_Vulkan_Surface_t surf;
         surf.vk.surface = vkSurface;
-        surf.type = KGFX_INTERNAL_VULKAN_WINDOW_TYPE_XLIB;
-        surf.window.xlib.display = display;
-        surf.window.xlib.window = window;
+        surf.type = KGFX_INTERNAL_VULKAN_WINDOW_TYPE_WAYLAND;
+        surf.window.wayland.display = display;
+        surf.window.wayland.surface = surface;
         surf.referenceCount = 0;
 
         surfaceIndex = vulkanInstance->surfaces.length;
@@ -5326,12 +5326,12 @@ KGFXResult kgfxCreateSwapchainWayland_vulkan(KGFXDevice device, void* display, v
         } else {
             KGFX_LIST_APPEND(vulkanInstance->surfaces, surf, KGFX_Vulkan_Surface_t);
         }
-        surface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
+        vulkanSurface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
     }
     
-    KGFXResult result = kgfx_createSwapchain_vulkan(vulkanDevice, surface, pSwapchainDesc, pSwapchain);
+    KGFXResult result = kgfx_createSwapchain_vulkan(vulkanDevice, vulkanSurface, pSwapchainDesc, pSwapchain);
     if (result != KGFX_RESULT_SUCCESS) {
-        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, vulkanSurface->vk.surface, NULL);
         KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
         return result;
     }

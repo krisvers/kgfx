@@ -190,15 +190,17 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
     
 #ifdef KGFX_WIN32
     result = kgfxCreateSwapchainWin32(pState->device, glfwGetWin32Window(window), GetModuleHandle(NULL), &swapchainDesc, &pState->swapchain);
-#elif defined(KGFX_XLIB)
-    if (glfwGetX11Display() != NULL) {
-        result = kgfxCreateSwapchainXlib(pState->device, glfwGetX11Display(), glfwGetX11Window(window), &swapchainDesc, &pState->swapchain);
-    } else {
-        result = kgfxCreateSwapchainWayland(pState->device, glfwGetWaylandDisplay(), glfwGetWaylandWindow(window), &swapchainDesc, &pState->swapchain);
-    }
+#elif defined(KGFX_XLIB) || defined(KGFX_WAYLAND)
+
+#ifdef TEST_WAYLAND
+    result = kgfxCreateSwapchainWayland(pState->device, glfwGetWaylandDisplay(), glfwGetWaylandWindow(window), &swapchainDesc, &pState->swapchain);
+#else
+    result = kgfxCreateSwapchainXlib(pState->device, glfwGetX11Display(), glfwGetX11Window(window), &swapchainDesc, &pState->swapchain);
+#endif /* #ifdef TEST_WAYLAND */
+
 #elif defined(KGFX_COCOA)
     result = kgfxCreateSwapchainCocoa(pState->device, glfwGetCocoaWindow(window), &swapchainDesc, &pState->swapchain);
-#endif
+#endif /* #ifdef KGFX_WIN32 */
     if (result != KGFX_RESULT_SUCCESS) {
         printf("Failed to create swapchain on %s\n", pState->apiString);
         destroyTestState(pState);
