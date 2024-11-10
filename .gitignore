@@ -4,6 +4,7 @@ xcode
 .DS_Store
 .vscode
 .vs
+.swp
 *.sln
 *.vcxproj
 *.vcxproj.filters
