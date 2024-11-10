@@ -37,23 +37,85 @@ typedef struct UniformData {
     mat4x4 mvp;
 } UniformData;
 
+typedef struct TestKGFXState {
+    KGFXBool isValid;
+    
+    const char* apiString;
+    uint32_t width, height;
+    uint32_t triangleCount;
+    UniformData* pUniformData;
+    KGFXTexture backbuffer;
+    
+    KGFXInstance instance;
+    KGFXDevice device;
+    KGFXSwapchain swapchain;
+    KGFXShader vertexShader;
+    KGFXShader fragmentShader;
+    KGFXGraphicsPipeline graphicsPipeline;
+    KGFXCommandPool commandPool;
+    KGFXCommandList commandList;
+    KGFXBuffer vertexBuffer;
+    KGFXBuffer uniformBuffer;
+    KGFXTexture logoTexture;
+    KGFXTexture depthTexture;
+    KGFXSampler nearestSampler;
+} TestKGFXState;
+
+void destroyTestState(TestKGFXState* pState) {
+    if (!pState->isValid) {
+        return;
+    }
+    
+    pState->isValid = KGFX_FALSE;
+    if (pState->nearestSampler != NULL) { kgfxDestroySampler(pState->nearestSampler); }
+    if (pState->depthTexture != NULL) { kgfxDestroyTexture(pState->depthTexture); }
+    if (pState->logoTexture != NULL) { kgfxDestroyTexture(pState->logoTexture); }
+    if (pState->uniformBuffer != NULL) { kgfxDestroyBuffer(pState->uniformBuffer); }
+    if (pState->vertexBuffer != NULL) { kgfxDestroyBuffer(pState->vertexBuffer); }
+    if (pState->commandList != NULL) { kgfxDestroyCommandList(pState->commandList); }
+    if (pState->commandPool != NULL) { kgfxDestroyCommandPool(pState->commandPool); }
+    if (pState->graphicsPipeline != NULL) { kgfxDestroyGraphicsPipeline(pState->graphicsPipeline); }
+    if (pState->fragmentShader != NULL) { kgfxDestroyShader(pState->fragmentShader); }
+    if (pState->vertexShader != NULL) { kgfxDestroyShader(pState->vertexShader); }
+    if (pState->swapchain != NULL) { kgfxDestroySwapchain(pState->swapchain); }
+    if (pState->device != NULL) { kgfxDestroyDevice(pState->device); }
+    if (pState->instance != NULL) { kgfxDestroyInstance(pState->instance); }
+}
+
 void debugCallbackKGFX(KGFXInstance instance, KGFXDebugSeverity severity, KGFXDebugSource source, const char* message) {
     printf("[KGFX] %s\n", message);
 }
 
-KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
-    KGFXInstance instance;
-    KGFXResult result = kgfxCreateInstance(api, KGFX_INSTANCE_CREATE_FLAG_DEBUG | KGFX_INSTANCE_CREATE_FLAG_VALIDATION | KGFX_INSTANCE_CREATE_FLAG_GRAPHICAL, &instance);
+static const char* apiStrings[] = { "Vulkan", "D3D12", "Metal", "Unknown API" };
+
+const char* getApiString(KGFXInstanceAPI api) {
+    if (api == KGFX_INSTANCE_API_VULKAN) {
+        return apiStrings[0];
+    } else if (api == KGFX_INSTANCE_API_D3D12) {
+        return apiStrings[1];
+    } else if (api == KGFX_INSTANCE_API_METAL) {
+        return apiStrings[2];
+    }
+    
+    return apiStrings[3];
+}
+
+KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI api) {
+    pState->isValid = KGFX_TRUE;
+    pState->apiString = getApiString(api);
+    
+    KGFXResult result = kgfxCreateInstance(api, KGFX_INSTANCE_CREATE_FLAG_DEBUG | KGFX_INSTANCE_CREATE_FLAG_VALIDATION | KGFX_INSTANCE_CREATE_FLAG_GRAPHICAL, &pState->instance);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create KGFX instance\n");
+        printf("Failed to create instance on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    kgfxDebugRegisterCallback(instance, debugCallbackKGFX);
+    kgfxDebugRegisterCallback(pState->instance, debugCallbackKGFX);
 
     KGFXAdapterDetails adapterDetails = { 0 };
     const char memSuffixLookup[] = { 'B', 'K', 'M', 'G', 'T', 'P' };
-    for (uint32_t i = 0; kgfxEnumerateAdapters(instance, i, &adapterDetails) == KGFX_RESULT_ENUMERATION_IN_PROGRESS; i++) {
+    for (uint32_t i = 0; kgfxEnumerateAdapters(pState->instance, i, &adapterDetails) == KGFX_RESULT_ENUMERATION_IN_PROGRESS; i++) {
         printf("Adapter %u: %s\n", i, adapterDetails.name);
         printf("    Device Type: %u\n", adapterDetails.type);
         printf("    Vendor: %u\n", adapterDetails.vendor);
@@ -112,71 +174,62 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         printf("    Max Memory: %.02f%c\n", mem, memSuffixLookup[memSuffix]);
     }
 
-    KGFXDevice device;
-    result = kgfxCreateDevice(instance, 0, &device);
+    result = kgfxCreateDevice(pState->instance, 0, &pState->device);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create KGFX device\n");
-        kgfxDestroyInstance(instance);
+        printf("Failed to create device on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    float xscale, yscale;
-    glfwGetWindowContentScale(window, &xscale, &yscale);
-    
     KGFXSwapchainDesc swapchainDesc;
-    swapchainDesc.width = 800 * xscale;
-    swapchainDesc.height = 600 * yscale;
+    swapchainDesc.width = pState->width;
+    swapchainDesc.height = pState->height;
     swapchainDesc.format = KGFX_FORMAT_B8G8R8A8_SRGB;
     swapchainDesc.imageCount = 2;
     swapchainDesc.presentMode = KGFX_PRESENT_MODE_VSYNC;
     
-    KGFXSwapchain swapchain;
 #ifdef KGFX_WIN32
-    result = kgfxCreateSwapchainWin32(device, glfwGetWin32Window(window), GetModuleHandle(NULL), &swapchainDesc, &swapchain);
+    result = kgfxCreateSwapchainWin32(pState->device, glfwGetWin32Window(window), GetModuleHandle(NULL), &swapchainDesc, &pState->swapchain);
 #elif defined(KGFX_XLIB)
-    result = kgfxCreateSwapchainXlib(device, glfwGetX11Display(), glfwGetX11Window(window), &swapchainDesc, &swapchain);
+    if (glfwGetX11Display() != NULL) {
+        result = kgfxCreateSwapchainXlib(pState->device, glfwGetX11Display(), glfwGetX11Window(window), &swapchainDesc, &pState->swapchain);
+    } else {
+        result = kgfxCreateSwapchainWayland(pState->device, glfwGetWaylandDisplay(), glfwGetWaylandWindow(window), &swapchainDesc, &pState->swapchain);
+    }
 #elif defined(KGFX_COCOA)
-    result = kgfxCreateSwapchainCocoa(device, glfwGetCocoaWindow(window), &swapchainDesc, &swapchain);
+    result = kgfxCreateSwapchainCocoa(pState->device, glfwGetCocoaWindow(window), &swapchainDesc, &pState->swapchain);
 #endif
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create KGFX swapchain\n");
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create swapchain on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
 
-    KGFXTexture backbuffer = kgfxGetSwapchainBackbuffer(swapchain);
+    pState->backbuffer = kgfxGetSwapchainBackbuffer(pState->swapchain);
     
     #include "shader.vert.spv.h"
     #include "shader.frag.spv.h"
     
-    KGFXShader vertexShader;
-    result = kgfxCreateShaderSPIRV(device, vertexShaderSPIRV, sizeof(vertexShaderSPIRV), "main", KGFX_SHADER_STAGE_VERTEX, &vertexShader);
+    result = kgfxCreateShaderSPIRV(pState->device, vertexShaderSPIRV, sizeof(vertexShaderSPIRV), "main", KGFX_SHADER_STAGE_VERTEX, &pState->vertexShader);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create shader from SPIR-V\n");
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create SPIR-V vertex shader on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    KGFXShader fragmentShader;
-    result = kgfxCreateShaderSPIRV(device, fragmentShaderSPIRV, sizeof(fragmentShaderSPIRV), "main", KGFX_SHADER_STAGE_FRAGMENT, &fragmentShader);
+    result = kgfxCreateShaderSPIRV(pState->device, fragmentShaderSPIRV, sizeof(fragmentShaderSPIRV), "main", KGFX_SHADER_STAGE_FRAGMENT, &pState->fragmentShader);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create shader from SPIR-V\n");
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create SPIR-V fragment shader on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    KGFXShader shaders[2] = { vertexShader, fragmentShader };
+    KGFXShader shaders[2] = { pState->vertexShader, pState->fragmentShader };
     
     KGFXRenderTargetDesc renderTargetDescs[1];
     renderTargetDescs[0].format = swapchainDesc.format;
-    renderTargetDescs[0].width = swapchainDesc.width;
-    renderTargetDescs[0].height = swapchainDesc.height;
+    renderTargetDescs[0].width = pState->width;
+    renderTargetDescs[0].height = pState->height;
     renderTargetDescs[0].layers = 1;
     renderTargetDescs[0].enableBlending = KGFX_TRUE;
     renderTargetDescs[0].colorBlendOp = KGFX_BLEND_OP_ADD;
@@ -229,8 +282,8 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     pipelineDesc.pRenderTargetDescs = renderTargetDescs;
     
     pipelineDesc.depthStencilDesc.format = KGFX_FORMAT_D32_FLOAT;
-    pipelineDesc.depthStencilDesc.width = swapchainDesc.width;
-    pipelineDesc.depthStencilDesc.height = swapchainDesc.height;
+    pipelineDesc.depthStencilDesc.width = pState->width;
+    pipelineDesc.depthStencilDesc.height = pState->height;
     pipelineDesc.depthStencilDesc.layers = 1;
     pipelineDesc.depthStencilDesc.compareOp = KGFX_COMPARE_OP_LEQUAL;
     pipelineDesc.depthStencilDesc.writeDepth = KGFX_TRUE;
@@ -277,42 +330,24 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     pipelineDesc.uniformSignatureDesc.uniformCount = sizeof(uniformDescs) / sizeof(uniformDescs[0]);
     pipelineDesc.uniformSignatureDesc.pUniforms = uniformDescs;
     
-    KGFXGraphicsPipeline pipeline;
-    result = kgfxCreateGraphicsPipeline(device, &pipelineDesc, &pipeline);
+    result = kgfxCreateGraphicsPipeline(pState->device, &pipelineDesc, &pState->graphicsPipeline);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create graphics pipeline\n");
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create graphics pipeline on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    KGFXCommandPool commandPool;
-    result = kgfxCreateCommandPool(device, 1, KGFX_QUEUE_TYPE_GENERIC, &commandPool);
+    result = kgfxCreateCommandPool(pState->device, 1, KGFX_QUEUE_TYPE_GENERIC, &pState->commandPool);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create command pool\n");
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create command pool on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    KGFXCommandList commandList;
-    result = kgfxCreateCommandList(commandPool, &commandList);
+    result = kgfxCreateCommandList(pState->commandPool, &pState->commandList);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create command list\n");
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create command list on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
 
@@ -324,72 +359,42 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
         {  2.0f,  1.0f, -0.5f,     1.0f, 0.0f, 0.0f,   1.0f, 0.0f },
         { -2.0f, -1.0f, -0.5f,     1.0f, 0.0f, 0.0f,   0.0f, 1.0f },
     };
+    
+    pState->triangleCount = sizeof(vertices) / sizeof(vertices[0]);
 
-    KGFXBuffer vertexBuffer;
-    result = kgfxCreateBuffer(device, sizeof(vertices), KGFX_BUFFER_USAGE_VERTEX_BUFFER | KGFX_BUFFER_USAGE_TRANSFER_DST, KGFX_RESOURCE_LOCATION_DEVICE, &vertexBuffer);
+    result = kgfxCreateBuffer(pState->device, sizeof(vertices), KGFX_BUFFER_USAGE_VERTEX_BUFFER | KGFX_BUFFER_USAGE_TRANSFER_DST, KGFX_RESOURCE_LOCATION_DEVICE, &pState->vertexBuffer);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create vertex buffer\n");
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create vertex buffer on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
 
-    result = kgfxUploadBuffer(vertexBuffer, vertices, sizeof(vertices));
+    result = kgfxUploadBuffer(pState->vertexBuffer, vertices, sizeof(vertices));
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to upload to vertex buffer\n");
-        kgfxDestroyBuffer(vertexBuffer);
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to upload to vertex buffer on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    KGFXBuffer uniformBuffer;
-    result = kgfxCreateBuffer(device, sizeof(UniformData), KGFX_BUFFER_USAGE_UNIFORM_BUFFER, KGFX_RESOURCE_LOCATION_HOST, &uniformBuffer);
+    result = kgfxCreateBuffer(pState->device, sizeof(UniformData), KGFX_BUFFER_USAGE_UNIFORM_BUFFER, KGFX_RESOURCE_LOCATION_HOST, &pState->uniformBuffer);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create uniform buffer\n");
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create uniform buffer on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
-    UniformData* pUniformData;
-    result = kgfxMapBuffer(uniformBuffer, (void*) &pUniformData);
+    result = kgfxMapBuffer(pState->uniformBuffer, (void*) &pState->pUniformData);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to map uniform buffer\n");
-        kgfxDestroyBuffer(uniformBuffer);
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to map uniform buffer on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
     int w, h, components;
     uint8_t* pixels = stbi_load("logo.png", &w, &h, &components, STBI_rgb_alpha);
     if (pixels == NULL) {
-        printf("logo.png not found\n");
+        printf("Failed to load logo.png on %s\n", pState->apiString);
+        destroyTestState(pState);
         return KGFX_RESULT_ERROR_UNKNOWN;
     }
     
@@ -404,21 +409,10 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     textureDesc.usage = KGFX_TEXTURE_USAGE_UNIFORM_TEXTURE | KGFX_TEXTURE_USAGE_TRANSFER_DST;
     textureDesc.location = KGFX_RESOURCE_LOCATION_DEVICE;
     
-    KGFXTexture texture;
-    result = kgfxCreateTexture(device, &textureDesc, &texture);
+    result = kgfxCreateTexture(pState->device, &textureDesc, &pState->logoTexture);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create texture\n");
-        kgfxUnmapBuffer(uniformBuffer);
-        kgfxDestroyBuffer(uniformBuffer);
-        kgfxDestroyBuffer(vertexBuffer);
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create logo texture on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
@@ -432,46 +426,24 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     transferDesc.textureFirstLayer = 0;
     transferDesc.textureLayerCount = 1;
     
-    result = kgfxUploadTexture(texture, pixels, w * h * components, &transferDesc);
+    result = kgfxUploadTexture(pState->logoTexture, pixels, w * h * components, &transferDesc);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to upload to texture\n");
-        kgfxDestroyTexture(texture);
-        kgfxUnmapBuffer(uniformBuffer);
-        kgfxDestroyBuffer(uniformBuffer);
-        kgfxDestroyBuffer(vertexBuffer);
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to upload logo texture on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
+    stbi_image_free(pixels);
 
-    textureDesc.width = swapchainDesc.width;
-    textureDesc.height = swapchainDesc.height;
+    textureDesc.width = pState->width;
+    textureDesc.height = pState->height;
     textureDesc.format = KGFX_FORMAT_D32_FLOAT;
     textureDesc.usage = KGFX_TEXTURE_USAGE_DEPTH_STENCIL_TARGET;
     textureDesc.location = KGFX_RESOURCE_LOCATION_DEVICE;
     
-    KGFXTexture depthTexture;
-    result = kgfxCreateTexture(device, &textureDesc, &depthTexture);
+    result = kgfxCreateTexture(pState->device, &textureDesc, &pState->depthTexture);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create depth texture\n");
-        kgfxDestroyTexture(texture);
-        kgfxUnmapBuffer(uniformBuffer);
-        kgfxDestroyBuffer(uniformBuffer);
-        kgfxDestroyBuffer(vertexBuffer);
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create depth texture on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
     
@@ -487,189 +459,119 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     samplerDesc.maxLod = 1.0f;
     samplerDesc.minLod = 0.0f;
     
-    KGFXSampler sampler;
-    result = kgfxCreateSampler(device, &samplerDesc, &sampler);
+    result = kgfxCreateSampler(pState->device, &samplerDesc, &pState->nearestSampler);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create sampler\n");
-        kgfxDestroyTexture(depthTexture);
-        kgfxDestroyTexture(texture);
-        kgfxUnmapBuffer(uniformBuffer);
-        kgfxDestroyBuffer(uniformBuffer);
-        kgfxDestroyBuffer(vertexBuffer);
-        kgfxDestroyCommandList(commandList);
-        kgfxDestroyCommandPool(commandPool);
-        kgfxDestroyGraphicsPipeline(pipeline);
-        kgfxDestroyShader(fragmentShader);
-        kgfxDestroyShader(vertexShader);
-        kgfxDestroySwapchain(swapchain);
-        kgfxDestroyDevice(device);
-        kgfxDestroyInstance(instance);
+        printf("Failed to create nearest sampler on %s\n", pState->apiString);
+        destroyTestState(pState);
         return result;
     }
-    
-    while (!glfwWindowShouldClose(window)) {
-        mat4x4_identity(pUniformData->mvp);
-        mat4x4_rotate_Z(pUniformData->mvp, pUniformData->mvp, glfwGetTime());
-        
-        mat4x4 proj;
-        mat4x4_perspective(proj, 60, 4.0f / 3.0f, 0.0f, 100.0f);
-        
-        mat4x4_mul(pUniformData->mvp, proj, pUniformData->mvp);
-        
-        kgfxResetCommandList(commandList);
-        
-        result = kgfxOpenCommandList(commandList, KGFX_FALSE);
-        if (result != KGFX_RESULT_SUCCESS) {
-            printf("Failed to open command list\n");
-            kgfxDestroyTexture(texture);
-            kgfxDestroyTexture(depthTexture);
-            kgfxUnmapBuffer(uniformBuffer);
-            kgfxDestroyBuffer(uniformBuffer);
-            kgfxDestroyBuffer(vertexBuffer);
-            kgfxDestroyCommandList(commandList);
-            kgfxDestroyCommandPool(commandPool);
-            kgfxDestroyGraphicsPipeline(pipeline);
-            kgfxDestroyShader(fragmentShader);
-            kgfxDestroyShader(vertexShader);
-            kgfxDestroySwapchain(swapchain);
-            kgfxDestroyDevice(device);
-            kgfxDestroyInstance(instance);
-            return result;
-        }
-
-        kgfxCmdBindGraphicsPipeline(commandList, pipeline);
-
-        KGFXUniformBinding binding;
-        binding.bindPoint.bindingIndex.binding = 0;
-        binding.type = KGFX_UNIFORM_BIND_POINT_TYPE_BINDING_INDEX;
-        kgfxCmdBindUniformBuffer(commandList, binding, uniformBuffer, 0, sizeof(UniformData));
-        
-        binding.bindPoint.bindingIndex.binding = 1;
-        kgfxCmdBindUniformTexture(commandList, binding, texture);
-        
-        binding.bindPoint.bindingIndex.binding = 2;
-        kgfxCmdBindSampler(commandList, binding, sampler);
-
-        uint64_t offset = 0;
-        kgfxCmdBindVertexBuffers(commandList, 0, 1, &vertexBuffer, &offset);
-
-        KGFXViewport viewport;
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float) swapchainDesc.width;
-        viewport.height = (float) swapchainDesc.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
-        KGFXScissor scissor;
-        scissor.x = 0;
-        scissor.y = 0;
-        scissor.width = swapchainDesc.width;
-        scissor.height = swapchainDesc.height;
-
-        kgfxCmdSetViewportAndScissor(commandList, 1, &viewport, &scissor);
-        
-        KGFXTexture renderTargets[1] = { backbuffer };
-        kgfxCmdBindRenderTargets(commandList, sizeof(renderTargets) / sizeof(renderTargets[0]), renderTargets, depthTexture);
-        
-        KGFXClearValue clearValue;
-        clearValue.type = KGFX_CLEAR_VALUE_TYPE_F32;
-        clearValue.value.f32[0] = 0.01f;
-        clearValue.value.f32[1] = 0.0f;
-        clearValue.value.f32[2] = 0.02f;
-        clearValue.value.f32[3] = 1.0f;
-        
-        KGFXClearValue depthClearValue;
-        depthClearValue.type = KGFX_CLEAR_VALUE_TYPE_DEPTH_STENCIL;
-        depthClearValue.value.depthStencil.depth = 1.0f;
-        depthClearValue.value.depthStencil.stencil = 0;
-
-        kgfxCmdBeginRendering(commandList, 1, &clearValue, &depthClearValue);
-
-        kgfxCmdDraw(commandList, sizeof(vertices) / sizeof(Vertex), 1, 0, 0);
-
-        kgfxCmdEndRendering(commandList);
-        result = kgfxCloseCommandList(commandList);
-        if (result != KGFX_RESULT_SUCCESS) {
-            printf("Failed to close command list\n");
-            kgfxDestroyTexture(texture);
-            kgfxDestroyTexture(depthTexture);
-            kgfxUnmapBuffer(uniformBuffer);
-            kgfxDestroyBuffer(uniformBuffer);
-            kgfxDestroyBuffer(vertexBuffer);
-            kgfxDestroyCommandList(commandList);
-            kgfxDestroyCommandPool(commandPool);
-            kgfxDestroyGraphicsPipeline(pipeline);
-            kgfxDestroyShader(fragmentShader);
-            kgfxDestroyShader(vertexShader);
-            kgfxDestroySwapchain(swapchain);
-            kgfxDestroyDevice(device);
-            kgfxDestroyInstance(instance);
-            return result;
-        }
-
-        result = kgfxSubmitCommandList(commandList);
-        if (result != KGFX_RESULT_SUCCESS) {
-            printf("Failed to submit command list\n");
-            kgfxDestroyTexture(texture);
-            kgfxDestroyTexture(depthTexture);
-            kgfxUnmapBuffer(uniformBuffer);
-            kgfxDestroyBuffer(uniformBuffer);
-            kgfxDestroyBuffer(vertexBuffer);
-            kgfxDestroyCommandList(commandList);
-            kgfxDestroyCommandPool(commandPool);
-            kgfxDestroyGraphicsPipeline(pipeline);
-            kgfxDestroyShader(fragmentShader);
-            kgfxDestroyShader(vertexShader);
-            kgfxDestroySwapchain(swapchain);
-            kgfxDestroyDevice(device);
-            kgfxDestroyInstance(instance);
-            return result;
-        }
-
-        result = kgfxPresentSwapchain(swapchain);
-        if (result != KGFX_RESULT_SUCCESS) {
-            printf("Failed to present swapchain\n");
-            kgfxDestroyTexture(texture);
-            kgfxDestroyTexture(depthTexture);
-            kgfxUnmapBuffer(uniformBuffer);
-            kgfxDestroyBuffer(uniformBuffer);
-            kgfxDestroyBuffer(vertexBuffer);
-            kgfxDestroyCommandList(commandList);
-            kgfxDestroyCommandPool(commandPool);
-            kgfxDestroyGraphicsPipeline(pipeline);
-            kgfxDestroyShader(fragmentShader);
-            kgfxDestroyShader(vertexShader);
-            kgfxDestroySwapchain(swapchain);
-            kgfxDestroyDevice(device);
-            kgfxDestroyInstance(instance);
-            return result;
-        }
-
-        glfwPollEvents();
-#ifdef KGFX_WIN32
-        Sleep(2);
-#else
-        usleep(2000);
-#endif /* #ifdef KGFX_WIN32 */
-    }
-    
-    kgfxDestroySampler(sampler);
-    kgfxDestroyTexture(texture);
-    kgfxDestroyTexture(depthTexture);
-    kgfxUnmapBuffer(uniformBuffer);
-    kgfxDestroyBuffer(uniformBuffer);
-    kgfxDestroyBuffer(vertexBuffer);
-    kgfxDestroyCommandList(commandList);
-    kgfxDestroyCommandPool(commandPool);
-    kgfxDestroyGraphicsPipeline(pipeline);
-    kgfxDestroyShader(fragmentShader);
-    kgfxDestroyShader(vertexShader);
-    kgfxDestroySwapchain(swapchain);
-    kgfxDestroyDevice(device);
-    kgfxDestroyInstance(instance);
+                         
     return KGFX_RESULT_SUCCESS;
 }
+
+KGFXResult testLoop(TestKGFXState* pState) {
+    if (!pState->isValid) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+    
+    mat4x4_identity(pState->pUniformData->mvp);
+    mat4x4_rotate_Z(pState->pUniformData->mvp, pState->pUniformData->mvp, glfwGetTime());
+    
+    mat4x4 proj;
+    mat4x4_perspective(proj, 60, 4.0f / 3.0f, 0.0f, 100.0f);
+    
+    mat4x4_mul(pState->pUniformData->mvp, proj, pState->pUniformData->mvp);
+    
+    kgfxResetCommandList(pState->commandList);
+    
+    KGFXResult result = kgfxOpenCommandList(pState->commandList, KGFX_FALSE);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to open command list on %s\n", pState->apiString);
+        return result;
+    }
+
+    kgfxCmdBindGraphicsPipeline(pState->commandList, pState->graphicsPipeline);
+
+    KGFXUniformBinding binding;
+    binding.bindPoint.bindingIndex.binding = 0;
+    binding.type = KGFX_UNIFORM_BIND_POINT_TYPE_BINDING_INDEX;
+    kgfxCmdBindUniformBuffer(pState->commandList, binding, pState->uniformBuffer, 0, sizeof(UniformData));
+    
+    binding.bindPoint.bindingIndex.binding = 1;
+    kgfxCmdBindUniformTexture(pState->commandList, binding, pState->logoTexture);
+    
+    binding.bindPoint.bindingIndex.binding = 2;
+    kgfxCmdBindSampler(pState->commandList, binding, pState->nearestSampler);
+
+    uint64_t offset = 0;
+    kgfxCmdBindVertexBuffers(pState->commandList, 0, 1, &pState->vertexBuffer, &offset);
+
+    KGFXViewport viewport;
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) pState->width;
+    viewport.height = (float) pState->height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    KGFXScissor scissor;
+    scissor.x = 0;
+    scissor.y = 0;
+    scissor.width = pState->width;
+    scissor.height = pState->height;
+
+    kgfxCmdSetViewportAndScissor(pState->commandList, 1, &viewport, &scissor);
+    
+    KGFXTexture renderTargets[1] = { pState->backbuffer };
+    kgfxCmdBindRenderTargets(pState->commandList, sizeof(renderTargets) / sizeof(renderTargets[0]), renderTargets, pState->depthTexture);
+    
+    KGFXClearValue clearValue;
+    clearValue.type = KGFX_CLEAR_VALUE_TYPE_F32;
+    clearValue.value.f32[0] = 0.01f;
+    clearValue.value.f32[1] = 0.0f;
+    clearValue.value.f32[2] = 0.02f;
+    clearValue.value.f32[3] = 1.0f;
+    
+    KGFXClearValue depthClearValue;
+    depthClearValue.type = KGFX_CLEAR_VALUE_TYPE_DEPTH_STENCIL;
+    depthClearValue.value.depthStencil.depth = 1.0f;
+    depthClearValue.value.depthStencil.stencil = 0;
+
+    kgfxCmdBeginRendering(pState->commandList, 1, &clearValue, &depthClearValue);
+
+    kgfxCmdDraw(pState->commandList, pState->triangleCount, 1, 0, 0);
+
+    kgfxCmdEndRendering(pState->commandList);
+    result = kgfxCloseCommandList(pState->commandList);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to close command list on %s\n", pState->apiString);
+        return result;
+    }
+
+    result = kgfxSubmitCommandList(pState->commandList);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to submit command list on %s\n", pState->apiString);
+        return result;
+    }
+
+    result = kgfxPresentSwapchain(pState->swapchain);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to present swapchain on %s\n", pState->apiString);
+        return result;
+    }
+
+    glfwPollEvents();
+#ifdef KGFX_WIN32
+    Sleep(2);
+#else
+    usleep(2000);
+#endif /* #ifdef KGFX_WIN32 */
+    return KGFX_RESULT_SUCCESS;
+}
+
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
+#define API_COUNT 3
 
 int main() {
     if (!glfwInit()) {
@@ -677,29 +579,52 @@ int main() {
         return 1;
     }
     
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow* window = glfwCreateWindow(800, 600, "test", NULL, NULL);
-    if (window == NULL) {
-        printf("Failed to create GLFW window\n");
-        return 1;
+    uint32_t current = 0;
+    KGFXInstanceAPI apis[API_COUNT] = { KGFX_INSTANCE_API_VULKAN, KGFX_INSTANCE_API_D3D12, KGFX_INSTANCE_API_METAL };
+    TestKGFXState states[API_COUNT];
+    GLFWwindow* windows[API_COUNT];
+    memset(&states, 0, sizeof(states));
+    
+    uint32_t totalRunning = API_COUNT;
+    for (uint32_t i = 0; i < API_COUNT; ++i) {
+        states[i].width = WINDOW_WIDTH;
+        states[i].height = WINDOW_HEIGHT;
+        
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "KGFX %s Test", getApiString(apis[i]));
+        
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        windows[i] = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, buffer, NULL, NULL);
+        if (windows[i] == NULL) {
+            --totalRunning;
+            printf("Failed to create GLFW window\n");
+            continue;
+        }
+        
+        KGFXResult result = testSetup(&states[i], windows[i], apis[i]);
+        if (result != KGFX_RESULT_SUCCESS) {
+            --totalRunning;
+            printf("Failed to setup test for KGFX on %s\n", getApiString(apis[i]));
+            glfwDestroyWindow(windows[i]);
+        }
     }
     
-    KGFXResult result = test(window, KGFX_INSTANCE_API_VULKAN);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to test Vulkan KGFX\n");
+    while (totalRunning > 0) {
+        glfwPollEvents();
+        
+        for (uint32_t i = 0; i < API_COUNT; ++i) {
+            if (!states[i].isValid) {
+                continue;
+            }
+            
+            if (testLoop(&states[i]) != KGFX_RESULT_SUCCESS || glfwWindowShouldClose(windows[i])) {
+                destroyTestState(&states[i]);
+                glfwDestroyWindow(windows[i]);
+                --totalRunning;
+            }
+        }
     }
-
-    result = test(window, KGFX_INSTANCE_API_D3D12);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to test D3D12 KGFX\n");
-    }
-
-    result = test(window, KGFX_INSTANCE_API_METAL);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to test Metal KGFX\n");
-    }
-
-    glfwDestroyWindow(window);
+    
     glfwTerminate();
     
     return 0;

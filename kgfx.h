@@ -39,7 +39,6 @@ KGFX_DEFINE_HANDLE(KGFXTexture);
 KGFX_DEFINE_HANDLE(KGFXSampler);
 KGFX_DEFINE_HANDLE(KGFXFramebuffer);
 KGFX_DEFINE_HANDLE(KGFXSwapchain);
-KGFX_DEFINE_HANDLE(KGFXQueue);
 KGFX_DEFINE_HANDLE(KGFXCommandPool);
 KGFX_DEFINE_HANDLE(KGFXCommandList);
 KGFX_DEFINE_HANDLE(KGFXShader);
@@ -5281,7 +5280,63 @@ KGFXResult kgfxCreateSwapchainXcb_vulkan(KGFXDevice device, void* connection, ui
 
 /* (low) TODO: Vulkan Wayland swapchain */
 KGFXResult kgfxCreateSwapchainWayland_vulkan(KGFXDevice device, void* display, void* surface, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    if (pSwapchainDesc->format == KGFX_FORMAT_UNKNOWN) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+
+    KGFX_Vulkan_Surface_t* surface = NULL;
+    uint32_t surfaceIndex = 0;
+    for (uint32_t i = 0; i < vulkanInstance->surfaces.length; ++i) {
+        if (display == vulkanInstance->surfaces.data[i].window.wayland.display && surface == vulkanInstance->surfaces.data[i].window.wayland.surface) {
+            surface = &vulkanInstance->surfaces.data[i];
+            surfaceIndex = i;
+            break;
+        }
+    }
+
+    if (surface == NULL) {
+        VkWaylandSurfaceCreateInfoKHR createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        createInfo.pNext = NULL;
+        createInfo.flags = 0;
+        createInfo.display = (wl_display*) display;
+        createInfo.surface = (wl_surface*) surface;
+
+        VkSurfaceKHR vkSurface;
+        if (vkCreateWaylandSurfaceKHR(vulkanInstance->vk.instance, &createInfo, NULL, &vkSurface) != VK_SUCCESS) {
+            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+
+        kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SURFACE_KHR, vkSurface, "KGFX Wayland Surface %u", vulkanInstance->surfaces.length);
+
+        KGFX_Vulkan_Surface_t surf;
+        surf.vk.surface = vkSurface;
+        surf.type = KGFX_INTERNAL_VULKAN_WINDOW_TYPE_XLIB;
+        surf.window.xlib.display = display;
+        surf.window.xlib.window = window;
+        surf.referenceCount = 0;
+
+        surfaceIndex = vulkanInstance->surfaces.length;
+        if (vulkanInstance->surfaces.data == NULL) {
+            KGFX_LIST_INIT(vulkanInstance->surfaces, 1, KGFX_Vulkan_Surface_t);
+            memcpy(vulkanInstance->surfaces.data, &surf, sizeof(surf));
+        } else {
+            KGFX_LIST_APPEND(vulkanInstance->surfaces, surf, KGFX_Vulkan_Surface_t);
+        }
+        surface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
+    }
+    
+    KGFXResult result = kgfx_createSwapchain_vulkan(vulkanDevice, surface, pSwapchainDesc, pSwapchain);
+    if (result != KGFX_RESULT_SUCCESS) {
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+        return result;
+    }
+    
+    return KGFX_RESULT_SUCCESS;
 }
 #endif /* #if defined(__linux__) || defined(__gnu_linux__) */
 
