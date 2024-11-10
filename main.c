@@ -45,6 +45,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     KGFXInstance instance;
     KGFXResult result = kgfxCreateInstance(api, KGFX_INSTANCE_CREATE_FLAG_DEBUG | KGFX_INSTANCE_CREATE_FLAG_VALIDATION | KGFX_INSTANCE_CREATE_FLAG_GRAPHICAL, &instance);
     if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create KGFX instance\n");
         return result;
     }
     
@@ -133,7 +134,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
 #ifdef KGFX_WIN32
     result = kgfxCreateSwapchainWin32(device, glfwGetWin32Window(window), GetModuleHandle(NULL), &swapchainDesc, &swapchain);
 #elif defined(KGFX_XLIB)
-    result = kgfxCreateSwapchainXlib(device, glfwGetX11Display(window), glfwGetX11Window(window), &swapchainDesc, &swapchain);
+    result = kgfxCreateSwapchainXlib(device, glfwGetX11Display(), glfwGetX11Window(window), &swapchainDesc, &swapchain);
 #elif defined(KGFX_COCOA)
     result = kgfxCreateSwapchainCocoa(device, glfwGetCocoaWindow(window), &swapchainDesc, &swapchain);
 #endif
@@ -386,7 +387,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
     }
     
     int w, h, components;
-    uint8_t* pixels = stbi_load("/Users/krisvers/Dev/kgfx/logo.png", &w, &h, &components, STBI_rgb_alpha);
+    uint8_t* pixels = stbi_load("logo.png", &w, &h, &components, STBI_rgb_alpha);
     if (pixels == NULL) {
         printf("logo.png not found\n");
         return KGFX_RESULT_ERROR_UNKNOWN;
@@ -653,6 +654,7 @@ KGFXResult test(GLFWwindow* window, KGFXInstanceAPI api) {
 #endif /* #ifdef KGFX_WIN32 */
     }
     
+    kgfxDestroySampler(sampler);
     kgfxDestroyTexture(texture);
     kgfxDestroyTexture(depthTexture);
     kgfxUnmapBuffer(uniformBuffer);

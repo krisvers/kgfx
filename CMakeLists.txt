@@ -10,6 +10,7 @@ if (POLICY CMP0141)
 endif()
 
 project("kgfx")
+set(CMAKE_BUILD_TYPE Debug)
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -20,8 +21,13 @@ foreach (_variableName ${_variableNames})
     message(STATUS "${_variableName}=${${_variableName}}")
 endforeach()
 
+set(SOURCES "main.c" "kgfx.h" "kgfx_c.c" "kgfx_cpp.cpp" "common.h")
+if (APPLE)
+	list(APPEND SOURCES "kgfx_objc.m")
+endif()
+
 # Add source to this project's executable.
-add_executable(kgfx "main.c" "kgfx.h" "kgfx_c.c" "kgfx_cpp.cpp" "kgfx_objc.m" "common.h")
+add_executable(kgfx ${SOURCES})
 
 include_directories(${Vulkan_INCLUDE_DIRS})
 target_link_directories(kgfx PRIVATE ${Vulkan_LIBRARY})

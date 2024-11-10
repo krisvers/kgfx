@@ -109,6 +109,7 @@ typedef enum KGFXAdapterVendor {
     KGFX_ADAPTER_VENDOR_QUALCOMM = 5,
     KGFX_ADAPTER_VENDOR_IMGTEC = 6,
     KGFX_ADAPTER_VENDOR_APPLE = 7,
+    KGFX_ADAPTER_VENDOR_MESA = 16,
 } KGFXAdapterVendor;
 
 typedef enum KGFXFormat {
@@ -1042,6 +1043,7 @@ typedef struct KGFXInstance_Vulkan_t {
 
 typedef struct KGFXDevice_Vulkan_t {
     KGFXObject obj;
+    KGFXBool isCPU;
     
     struct {
         VkDevice device;
@@ -2198,7 +2200,7 @@ void kgfx_vulkan_debugNameObjectWithID(KGFXDevice_Vulkan_t* vulkanDevice, VkObje
 
 void kgfx_vulkan_debugNameObjectPrintf(KGFXDevice_Vulkan_t* vulkanDevice, VkObjectType type, void* handle, const char* fmt, ...) {
     KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
-    if (vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT != NULL) {
+    if (vulkanInstance->vk.functions.vkSetDebugUtilsObjectNameEXT != NULL && !vulkanDevice->isCPU && type != VK_OBJECT_TYPE_SURFACE_KHR) {
         VkDebugUtilsObjectNameInfoEXT nameInfo;
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
         nameInfo.pNext = NULL;
@@ -2534,6 +2536,7 @@ KGFXResult kgfxEnumerateAdapters_vulkan(KGFXInstance instance, uint32_t adapterI
     }
     
     VkPhysicalDevice vkPhysicalDevice = vulkanInstance->vk.physicalDevices.data[adapterID];
+
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(vkPhysicalDevice, &properties);
     
@@ -2578,10 +2581,15 @@ KGFXResult kgfxEnumerateAdapters_vulkan(KGFXInstance instance, uint32_t adapterI
             pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_APPLE;
             pAdapterDetails->type = KGFX_ADAPTER_TYPE_UMA_GPU;
             break;
+        case 0x10005:
+            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_MESA;
+            break;
         default:
             pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_UNKNOWN;
             break;
     }
+
+    printf("vendor id: %x\n", properties.vendorID);
     
     pAdapterDetails->maxTextureDimensions[0] = properties.limits.maxImageDimension1D;
     pAdapterDetails->maxTextureDimensions[1] = properties.limits.maxImageDimension2D;
@@ -2643,6 +2651,9 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     }
     
     VkPhysicalDevice vkPhysicalDevice = vulkanInstance->vk.physicalDevices.data[adapterID];
+
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(vkPhysicalDevice, &props);
 
     VkPhysicalDeviceImagelessFramebufferFeatures imagelessFramebufferFeatures;
     imagelessFramebufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES;
@@ -2845,6 +2856,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t adapterID, KG
     
     device->obj.api = KGFX_INSTANCE_API_VULKAN;
     device->obj.instance = instance;
+    device->isCPU = (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU);
     device->vk.physicalDevice = vkPhysicalDevice;
     device->vk.graphicsQueueIndex = gfxIndexBest;
     device->vk.computeQueueIndex = cmpIndexBest;
@@ -4955,13 +4967,24 @@ KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
     return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
 }
 
+#define KGFX_MIN(a_, b_) ((a_ < b_) ? a_ : b_)
+#define KGFX_MAX(a_, b_) ((a_ > b_) ? a_ : b_)
+
 KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_Vulkan_Surface_t* surface, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
+    VkSurfaceCapabilitiesKHR surfaceCapabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkanDevice->vk.physicalDevice, surface->vk.surface, &surfaceCapabilities);
+
+    uint32_t maxImages = surfaceCapabilities.maxImageCount;
+    if (maxImages == 0) {
+        maxImages = UINT32_MAX;
+    }
+
     VkSwapchainCreateInfoKHR createInfo;
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     createInfo.pNext = NULL;
     createInfo.flags = 0;
     createInfo.surface = surface->vk.surface;
-    createInfo.minImageCount = pSwapchainDesc->imageCount;
+    createInfo.minImageCount = KGFX_MAX(KGFX_MIN(pSwapchainDesc->imageCount, maxImages), surfaceCapabilities.minImageCount);
     if (!kgfx_vulkan_vkFormat(pSwapchainDesc->format, &createInfo.imageFormat)) {
         /* TODO: crash out safely */
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
@@ -5004,21 +5027,7 @@ KGFXResult kgfx_createSwapchain_vulkan(KGFXDevice_Vulkan_t* vulkanDevice, KGFX_V
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
     }
 
-    if (images.length != pSwapchainDesc->imageCount) {
-        for (uint32_t i = 0; i < images.length; ++i) {
-            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
-        }
-
-        KGFX_LIST_FREE(images);
-        vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-
     if (vkGetSwapchainImagesKHR(vulkanDevice->vk.device, vkSwapchain, &images.length, images.data) != VK_SUCCESS) {
-        for (uint32_t i = 0; i < images.length; ++i) {
-            vkDestroyImage(vulkanDevice->vk.device, images.data[i], NULL);
-        }
-
         KGFX_LIST_FREE(images);
         vkDestroySwapchainKHR(vulkanDevice->vk.device, vkSwapchain, NULL);
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
@@ -5206,7 +5215,63 @@ KGFXResult kgfxCreateSwapchainWin32_vulkan(KGFXDevice device, void* hwnd, void* 
 #if defined(__linux__) || defined(__gnu_linux__)
 /* (medium) TODO: Vulkan Xlib swapchain */
 KGFXResult kgfxCreateSwapchainXlib_vulkan(KGFXDevice device, void* display, unsigned long window, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    if (pSwapchainDesc->format == KGFX_FORMAT_UNKNOWN) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+
+    KGFX_Vulkan_Surface_t* surface = NULL;
+    uint32_t surfaceIndex = 0;
+    for (uint32_t i = 0; i < vulkanInstance->surfaces.length; ++i) {
+        if (display == vulkanInstance->surfaces.data[i].window.xlib.display && window == vulkanInstance->surfaces.data[i].window.xlib.window) {
+            surface = &vulkanInstance->surfaces.data[i];
+            surfaceIndex = i;
+            break;
+        }
+    }
+
+    if (surface == NULL) {
+        VkXlibSurfaceCreateInfoKHR createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        createInfo.pNext = NULL;
+        createInfo.flags = 0;
+        createInfo.dpy = (Display*) display;
+        createInfo.window = window;
+
+        VkSurfaceKHR vkSurface;
+        if (vkCreateXlibSurfaceKHR(vulkanInstance->vk.instance, &createInfo, NULL, &vkSurface) != VK_SUCCESS) {
+            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+
+        kgfx_vulkan_debugNameObjectPrintf(vulkanDevice, VK_OBJECT_TYPE_SURFACE_KHR, vkSurface, "KGFX Xlib Surface %u", vulkanInstance->surfaces.length);
+
+        KGFX_Vulkan_Surface_t surf;
+        surf.vk.surface = vkSurface;
+        surf.type = KGFX_INTERNAL_VULKAN_WINDOW_TYPE_XLIB;
+        surf.window.xlib.display = display;
+        surf.window.xlib.window = window;
+        surf.referenceCount = 0;
+
+        surfaceIndex = vulkanInstance->surfaces.length;
+        if (vulkanInstance->surfaces.data == NULL) {
+            KGFX_LIST_INIT(vulkanInstance->surfaces, 1, KGFX_Vulkan_Surface_t);
+            memcpy(vulkanInstance->surfaces.data, &surf, sizeof(surf));
+        } else {
+            KGFX_LIST_APPEND(vulkanInstance->surfaces, surf, KGFX_Vulkan_Surface_t);
+        }
+        surface = &vulkanInstance->surfaces.data[vulkanInstance->surfaces.length - 1];
+    }
+    
+    KGFXResult result = kgfx_createSwapchain_vulkan(vulkanDevice, surface, pSwapchainDesc, pSwapchain);
+    if (result != KGFX_RESULT_SUCCESS) {
+        vkDestroySurfaceKHR(vulkanInstance->vk.instance, surface->vk.surface, NULL);
+        KGFX_LIST_REMOVE(vulkanInstance->surfaces, surfaceIndex, KGFX_Vulkan_Surface_t);
+        return result;
+    }
+    
+    return KGFX_RESULT_SUCCESS;
 }
 
 /* (low-medium) TODO: Vulkan Xcb swapchain */
