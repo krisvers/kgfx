@@ -4829,7 +4829,39 @@ void kgfxCmdBindUniformBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBin
 
 /* (high) TODO: Vulkan resource binding */
 void kgfxCmdBindStorageBuffer_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    
+    VkDescriptorBufferInfo bufferInfo;
+    bufferInfo.buffer = vulkanBuffer->vk.buffer;
+    bufferInfo.offset = (VkDeviceSize) offset;
+    bufferInfo.range = (VkDeviceSize) size;
+    
+    VkWriteDescriptorSet writeSet;
+    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSet.pNext = NULL;
+    writeSet.dstSet = NULL;
+    writeSet.dstBinding = binding.bindPoint.bindingIndex.binding;
+    writeSet.dstArrayElement = 0;
+    writeSet.descriptorCount = 1;
+    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writeSet.pImageInfo = NULL;
+    writeSet.pBufferInfo = &bufferInfo;
+    writeSet.pTexelBufferView = NULL;
+    
+    VkPipelineLayout vkLayout;
+    if (vulkanCommandList->bound.graphicsPipeline != NULL) {
+        vkLayout = vulkanCommandList->bound.graphicsPipeline->vk.pipelineLayout;
+    } else {
+        /* TODO: crash out safely */
+        return;
+    }
+    
+    vulkanInstance->vk.functions.vkCmdPushDescriptorSetKHR(vulkanCommandList->vk.commandBuffer, (vulkanCommandList->bound.graphicsPipeline != NULL) ? VK_PIPELINE_BIND_POINT_GRAPHICS : VK_PIPELINE_BIND_POINT_COMPUTE, vkLayout, 0, 1, &writeSet);
 }
 
 void kgfxCmdBindUniformTexture_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
@@ -4871,7 +4903,41 @@ void kgfxCmdBindUniformTexture_vulkan(KGFXCommandList commandList, KGFXUniformBi
 }
 
 void kgfxCmdBindStorageTexture_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
+    KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    KGFXInstance_Vulkan_t* vulkanInstance = (KGFXInstance_Vulkan_t*) vulkanDevice->obj.instance;
+    
+    KGFXTexture_Vulkan_t* vulkanTexture = (KGFXTexture_Vulkan_t*) texture;
+    
+    kgfx_vulkan_transitionTexture(vulkanCommandList, vulkanTexture, VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    
+    VkDescriptorImageInfo imageInfo;
+    imageInfo.sampler = NULL;
+    imageInfo.imageView = vulkanTexture->vk.imageView;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    
+    VkWriteDescriptorSet writeSet;
+    writeSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeSet.pNext = NULL;
+    writeSet.dstSet = NULL;
+    writeSet.dstBinding = binding.bindPoint.bindingIndex.binding;
+    writeSet.dstArrayElement = 0;
+    writeSet.descriptorCount = 1;
+    writeSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writeSet.pImageInfo = &imageInfo;
+    writeSet.pBufferInfo = NULL;
+    writeSet.pTexelBufferView = NULL;
+    
+    VkPipelineLayout vkLayout;
+    if (vulkanCommandList->bound.graphicsPipeline != NULL) {
+        vkLayout = vulkanCommandList->bound.graphicsPipeline->vk.pipelineLayout;
+    } else {
+        /* TODO: crash out safely */
+        return;
+    }
+    
+    vulkanInstance->vk.functions.vkCmdPushDescriptorSetKHR(vulkanCommandList->vk.commandBuffer, (vulkanCommandList->bound.graphicsPipeline != NULL) ? VK_PIPELINE_BIND_POINT_GRAPHICS : VK_PIPELINE_BIND_POINT_COMPUTE, vkLayout, 0, 1, &writeSet);
 }
 
 void kgfxCmdBindSampler_vulkan(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler) {
@@ -4911,7 +4977,10 @@ void kgfxCmdBindSampler_vulkan(KGFXCommandList commandList, KGFXUniformBinding b
 }
 
 void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    
+    vkCmdBindIndexBuffer(vulkanCommandList->vk.commandBuffer, vulkanBuffer->vk.buffer, (VkDeviceSize) offset, vkIndexType);
 }
 
 void kgfxCmdBindVertexBuffers_vulkan(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {

@@ -625,6 +625,12 @@ int main() {
                 --totalRunning;
             }
         }
+        
+#ifdef KGFX_WIN32
+        Sleep(10);
+#else
+        usleep(10000);
+#endif /* #ifdef KGFX_WIN32 */
     }
     
     glfwTerminate();
