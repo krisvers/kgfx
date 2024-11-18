@@ -67,6 +67,7 @@ typedef enum KGFXInstanceAPI {
     KGFX_INSTANCE_API_VULKAN = 1,
     KGFX_INSTANCE_API_METAL = 2,
     KGFX_INSTANCE_API_D3D12 = 3,
+    KGFX_INSTANCE_API_D3D11 = 4,
     KGFX_INSTANCE_API_COUNT,
 } KGFXInstanceAPI;
 
@@ -705,10 +706,7 @@ KGFX_API void kgfxCmdDrawIndexed(KGFXCommandList commandList, uint32_t indexCoun
 KGFX_API void kgfxCmdDrawIndirect(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
 KGFX_API void kgfxCmdDrawIndexedIndirect(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
 
-/* TODO: explicit sync */
 KGFX_API KGFXResult kgfxPresentSwapchain(KGFXSwapchain swapchain);
-
-/* (low-medium) TODO: add more commands to API */
 
 #ifdef KGFX_WIN32
 KGFX_API KGFXResult kgfxCreateSwapchainWin32(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
@@ -767,7 +765,7 @@ KGFXResult kgfxCreateDevice_vulkan(KGFXInstance instance, uint32_t deviceID, KGF
 void kgfxDestroyDevice_vulkan(KGFXDevice device);
 
 KGFXResult kgfxCreateBuffer_vulkan(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer);
-void kgfxDestroyBuffer_metal(KGFXBuffer buffer);
+void kgfxDestroyBuffer_vulkan(KGFXBuffer buffer);
 
 KGFXResult kgfxMapBuffer_vulkan(KGFXBuffer buffer, void** ppData);
 void kgfxUnmapBuffer_vulkan(KGFXBuffer buffer);
@@ -832,6 +830,80 @@ void kgfxDestroySwapchain_vulkan(KGFXSwapchain swapchain);
 KGFXTexture kgfxGetSwapchainBackbuffer_vulkan(KGFXSwapchain swapchain);
 
 #endif /* #ifdef KGFX_VULKAN */
+
+#ifdef KGFX_D3D11
+
+KGFXResult kgfxCreateInstance_d3d11(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance);
+void kgfxDestroyInstance_d3d11(KGFXInstance instance);
+
+KGFXResult kgfxDebugRegisterCallback_d3d11(KGFXInstance instance, KGFXDebugCallbackPFN callback);
+
+KGFXResult kgfxEnumerateAdapters_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXAdapterDetails* pAdapterDetails);
+KGFXResult kgfxCreateDevice_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXDevice* pDevice);
+void kgfxDestroyDevice_d3d11(KGFXDevice device);
+
+KGFXResult kgfxCreateBuffer_d3d11(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer);
+void kgfxDestroyBufferd3d11(KGFXBuffer buffer);
+
+KGFXResult kgfxMapBuffer_d3d11(KGFXBuffer buffer, void** ppData);
+void kgfxUnmapBuffer_d3d11(KGFXBuffer buffer);
+
+KGFXResult kgfxUploadBuffer_d3d11(KGFXBuffer buffer, const void* pData, uint64_t size);
+KGFXResult kgfxDownloadBuffer_d3d11(KGFXBuffer buffer, void* pData, uint64_t size);
+
+KGFXResult kgfxCreateTexture_d3d11(KGFXDevice device, const KGFXTextureDesc* pTextureDesc, KGFXTexture* pTexture);
+void kgfxDestroyTexture_d3d11(KGFXTexture texture);
+
+KGFXResult kgfxUploadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+KGFXResult kgfxDownloadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+
+KGFXResult kgfxCreateSampler_d3d11(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
+void kgfxDestroySampler_d3d11(KGFXSampler sampler);
+
+KGFXResult kgfxCreateShaderSPIRV_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
+KGFXResult kgfxCreateShaderDXBC_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
+KGFXResult kgfxCreateShaderGLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader);
+KGFXResult kgfxCreateShaderHLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t shaderModelMajor, uint32_t shaderModelMinor, uint32_t macroDefineCount, const KGFXMacroDefineHLSL* pMacroDefines, KGFXShader* pShader);
+void kgfxDestroyShader_d3d11(KGFXShader shader);
+
+KGFXResult kgfxCreateCommandPool_d3d11(KGFXDevice device, uint32_t maxCommandLists, KGFXQueueType queueType, KGFXCommandPool* pCommandPool);
+void kgfxDestroyCommandPool_d3d11(KGFXCommandPool commandPool);
+
+KGFXResult kgfxCreateCommandList_d3d11(KGFXCommandPool commandPool, KGFXCommandList* pCommandList);
+void kgfxDestroyCommandList_d3d11(KGFXCommandList commandList);
+void kgfxResetCommandList_d3d11(KGFXCommandList commandList);
+
+KGFXResult kgfxOpenCommandList_d3d11(KGFXCommandList commandList, KGFXBool isOneTime);
+KGFXResult kgfxCloseCommandList_d3d11(KGFXCommandList commandList);
+KGFXResult kgfxSubmitCommandList_d3d11(KGFXCommandList commandList);
+
+void kgfxCmdBindGraphicsPipeline_d3d11(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
+void kgfxCmdSetViewportAndScissor_d3d11(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
+void kgfxCmdBindRenderTargets_d3d11(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
+void kgfxCmdBeginRendering_d3d11(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
+void kgfxCmdEndRendering_d3d11(KGFXCommandList commandList);
+
+void kgfxCmdBindUniformBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindStorageBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindUniformTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindStorageTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindSampler_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
+
+void kgfxCmdBindIndexBuffer_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
+void kgfxCmdBindVertexBuffers_d3d11(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+void kgfxCmdDraw_d3d11(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
+void kgfxCmdDrawIndexed_d3d11(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
+void kgfxCmdDrawIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+void kgfxCmdDrawIndexedIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+
+KGFXResult kgfxPresentSwapchain_d3d11(KGFXSwapchain swapchain);
+
+KGFXResult kgfxCreateSwapchainWin32_d3d11(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
+void kgfxDestroySwapchain_d3d11(KGFXSwapchain swapchain);
+
+KGFXTexture kgfxGetSwapchainBackbuffer_d3d11(KGFXSwapchain swapchain);
+
+#endif /* #ifdef KGFX_D3D11 */
 
 #ifdef KGFX_D3D12
 
@@ -986,6 +1058,10 @@ KGFXTexture kgfxGetSwapchainBackbuffer_metal(KGFXSwapchain swapchain);
 #endif /* #ifdef KGFX_METAL */
 
 #endif /* #if defined(KGFX_IMPLEMENTATION) || defined(KGFX_VULKAN_IMPLEMENTATION) || defined(KGFX_D3D12_IMPLEMENTATION) || defined(KGFX_METAL_IMPLEMENTATION) */
+
+#ifdef __cplusplus
+}
+#endif /* #ifdef __cplusplus */
 
 #ifdef KGFX_VULKAN_IMPLEMENTATION
 
@@ -1686,6 +1762,21 @@ KGFXBool kgfx_vulkan_vkStencilOp(KGFXStencilOp op, VkStencilOp* pOp) {
             break;
         case KGFX_STENCIL_OP_DECREM:
             *pOp = VK_STENCIL_OP_DECREMENT_AND_WRAP;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+    
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_vulkan_vkIndexType(KGFXIndexType type, VkIndexType* pType) {
+    switch (type) {
+        case KGFX_INDEX_TYPE_U16:
+            *pType = VK_INDEX_TYPE_UINT16;
+            break;
+        case KGFX_INDEX_TYPE_U32:
+            *pType = VK_INDEX_TYPE_UINT32;
             break;
         default:
             return KGFX_FALSE;
@@ -4980,6 +5071,11 @@ void kgfxCmdBindIndexBuffer_vulkan(KGFXCommandList commandList, KGFXBuffer buffe
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
     KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
     
+    VkIndexType vkIndexType;
+    if (!kgfx_vulkan_vkIndexType(indexType, &vkIndexType)) {
+        return;
+    }
+
     vkCmdBindIndexBuffer(vulkanCommandList->vk.commandBuffer, vulkanBuffer->vk.buffer, (VkDeviceSize) offset, vkIndexType);
 }
 
@@ -5001,15 +5097,20 @@ void kgfxCmdDraw_vulkan(KGFXCommandList commandList, uint32_t vertexCount, uint3
 }
 
 void kgfxCmdDrawIndexed_vulkan(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    vkCmdDrawIndexed(vulkanCommandList->vk.commandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 void kgfxCmdDrawIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    vkCmdDrawIndirect(vulkanCommandList->vk.commandBuffer, vulkanBuffer->vk.buffer, (VkDeviceSize) offset, drawCount, stride);
 }
 
 void kgfxCmdDrawIndexedIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {
-    return;
+    KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
+    KGFXBuffer_Vulkan_t* vulkanBuffer = (KGFXBuffer_Vulkan_t*) buffer;
+    vkCmdDrawIndexedIndirect(vulkanCommandList->vk.commandBuffer, vulkanBuffer->vk.buffer, (VkDeviceSize) offset, drawCount, stride);
 }
 
 KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
@@ -5589,57 +5690,110 @@ KGFXResult kgfx_vulkan_createSurfaceCocoa(VkInstance instance, void* nsWindow, V
 
 #endif /* KGFX_VULKAN_COCOA_IMPLEMENTATION */
 
+#ifdef KGFX_D3D11_IMPLEMENTATION
+
+#ifndef __cplusplus
+#error "C++ is required for the D3D11 implementation"
+#endif /* #ifndef __cplusplus */
+
+#include <d3d11.h>
+
+typedef struct KGFXInstance_D3D11_t {
+    KGFXInstance obj;
+
+    struct {
+        ID3D11Device* device;
+        ID3D11DeviceContext* context;
+    } d3d11;
+} KGFXInstance_D3D11_t;
+
+KGFXResult kgfxCreateInstance_d3d11(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroyInstance_d3d11(KGFXInstance instance);
+
+KGFXResult kgfxDebugRegisterCallback_d3d11(KGFXInstance instance, KGFXDebugCallbackPFN callback);
+
+KGFXResult kgfxEnumerateAdapters_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXAdapterDetails* pAdapterDetails);
+KGFXResult kgfxCreateDevice_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXDevice* pDevice);
+void kgfxDestroyDevice_d3d11(KGFXDevice device);
+
+KGFXResult kgfxCreateBuffer_d3d11(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer);
+void kgfxDestroyBufferd3d11(KGFXBuffer buffer);
+
+KGFXResult kgfxMapBuffer_d3d11(KGFXBuffer buffer, void** ppData);
+void kgfxUnmapBuffer_d3d11(KGFXBuffer buffer);
+
+KGFXResult kgfxUploadBuffer_d3d11(KGFXBuffer buffer, const void* pData, uint64_t size);
+KGFXResult kgfxDownloadBuffer_d3d11(KGFXBuffer buffer, void* pData, uint64_t size);
+
+KGFXResult kgfxCreateTexture_d3d11(KGFXDevice device, const KGFXTextureDesc* pTextureDesc, KGFXTexture* pTexture);
+void kgfxDestroyTexture_d3d11(KGFXTexture texture);
+
+KGFXResult kgfxUploadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+KGFXResult kgfxDownloadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+
+KGFXResult kgfxCreateSampler_d3d11(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
+void kgfxDestroySampler_d3d11(KGFXSampler sampler);
+
+KGFXResult kgfxCreateShaderSPIRV_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
+KGFXResult kgfxCreateShaderDXBC_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
+KGFXResult kgfxCreateShaderGLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader);
+KGFXResult kgfxCreateShaderHLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t shaderModelMajor, uint32_t shaderModelMinor, uint32_t macroDefineCount, const KGFXMacroDefineHLSL* pMacroDefines, KGFXShader* pShader);
+void kgfxDestroyShader_d3d11(KGFXShader shader);
+
+KGFXResult kgfxCreateCommandPool_d3d11(KGFXDevice device, uint32_t maxCommandLists, KGFXQueueType queueType, KGFXCommandPool* pCommandPool);
+void kgfxDestroyCommandPool_d3d11(KGFXCommandPool commandPool);
+
+KGFXResult kgfxCreateCommandList_d3d11(KGFXCommandPool commandPool, KGFXCommandList* pCommandList);
+void kgfxDestroyCommandList_d3d11(KGFXCommandList commandList);
+void kgfxResetCommandList_d3d11(KGFXCommandList commandList);
+
+KGFXResult kgfxOpenCommandList_d3d11(KGFXCommandList commandList, KGFXBool isOneTime);
+KGFXResult kgfxCloseCommandList_d3d11(KGFXCommandList commandList);
+KGFXResult kgfxSubmitCommandList_d3d11(KGFXCommandList commandList);
+
+void kgfxCmdBindGraphicsPipeline_d3d11(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
+void kgfxCmdSetViewportAndScissor_d3d11(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
+void kgfxCmdBindRenderTargets_d3d11(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
+void kgfxCmdBeginRendering_d3d11(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
+void kgfxCmdEndRendering_d3d11(KGFXCommandList commandList);
+
+void kgfxCmdBindUniformBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindStorageBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
+void kgfxCmdBindUniformTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindStorageTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
+void kgfxCmdBindSampler_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
+
+void kgfxCmdBindIndexBuffer_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
+void kgfxCmdBindVertexBuffers_d3d11(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
+void kgfxCmdDraw_d3d11(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
+void kgfxCmdDrawIndexed_d3d11(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
+void kgfxCmdDrawIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+void kgfxCmdDrawIndexedIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+
+KGFXResult kgfxPresentSwapchain_d3d11(KGFXSwapchain swapchain);
+
+KGFXResult kgfxCreateSwapchainWin32_d3d11(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
+void kgfxDestroySwapchain_d3d11(KGFXSwapchain swapchain);
+
+KGFXTexture kgfxGetSwapchainBackbuffer_d3d11(KGFXSwapchain swapchain);
+
+#endif /* #ifdef KGFX_D3D11_IMPLEMENTATION */
+
 #ifdef KGFX_D3D12_IMPLEMENTATION
 
-#include <d3d12.h>
-#include <dxgi1_6.h>
-
-#ifdef __cplusplus
-#define KGFX_D3D12_IID(T_, obj_) __uuidof(T_), (void**) &obj_
-#define KGFX_D3D12_CALL(obj_, method_, ...) obj_->method_(__VA_ARGS__)
-#else
-#define KGFX_D3D12_IID(T_, obj_) &IID_##T_, (void**) &obj_
-#define KGFX_D3D12_CALL(obj_, method_, ...) obj_->lpVtbl->method_(obj_, __VA_ARGS__)
-#endif /* #ifdef __cplusplus */
-
-typedef struct KGFXInstance_D3D12 {
-    KGFXObject obj;
-    
-    KGFXInstanceCreateFlagBits flags;
-    IDXGIFactory4* factory;
-} KGFXInstance_D3D12_t;
-
-typedef struct KGFXDevice_D3D12 {
-    KGFXObject obj;
-    
-    ID3D12Device* device;
-} KGFXDevice_D3D12_t;
+#ifndef __cplusplus
+#error "C++ is required for the D3D11 implementation"
+#endif /* #ifndef __cplusplus */
 
 KGFXResult kgfxCreateInstance_d3d12(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
-    IDXGIFactory4* factory;
-    HRESULT result = CreateDXGIFactory2(flags & KGFX_INSTANCE_CREATE_FLAG_DEBUG ? DXGI_CREATE_FACTORY_DEBUG : 0, KGFX_D3D12_IID(IDXGIFactory4, factory));
-    if (FAILED(result)) {
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    KGFXInstance_D3D12_t* instance = (KGFXInstance_D3D12_t*) malloc(sizeof(KGFXInstance_D3D12_t));
-    if (instance == NULL) {
-        KGFX_D3D12_CALL(factory, Release);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    instance->obj.api = KGFX_INSTANCE_API_D3D12;
-    instance->flags = flags;
-    instance->factory = factory;
-    
-    *pInstance = &instance->obj;
-    return KGFX_RESULT_SUCCESS;
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 void kgfxDestroyInstance_d3d12(KGFXInstance instance) {
-    KGFXInstance_D3D12_t* d3d12Instance = (KGFXInstance_D3D12_t*) instance;
-    KGFX_D3D12_CALL(d3d12Instance->factory, Release);
-    free(d3d12Instance);
+
 }
 
 KGFXResult kgfxDebugRegisterCallback_d3d12(KGFXInstance instance, KGFXDebugCallbackPFN callback) {
@@ -5647,136 +5801,15 @@ KGFXResult kgfxDebugRegisterCallback_d3d12(KGFXInstance instance, KGFXDebugCallb
 }
 
 KGFXResult kgfxEnumerateAdapters_d3d12(KGFXInstance instance, uint32_t adapterID, KGFXAdapterDetails* pAdapterDetails) {
-    KGFXInstance_D3D12_t* d3d12Instance = (KGFXInstance_D3D12_t*) instance;
-    
-    IDXGIAdapter1* adapter;
-    HRESULT result = KGFX_D3D12_CALL(d3d12Instance->factory, EnumAdapters1, adapterID, &adapter);
-    if (FAILED(result)) {
-        return KGFX_RESULT_ENUMERATION_DONE;
-    }
-    
-    DXGI_ADAPTER_DESC1 desc;
-    KGFX_D3D12_CALL(adapter, GetDesc1, &desc);
-    
-    if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
-        pAdapterDetails->type = KGFX_ADAPTER_TYPE_CPU;
-    } else if (desc.DedicatedVideoMemory > 0) {
-        pAdapterDetails->type = KGFX_ADAPTER_TYPE_DEDICATED_GPU;
-    } else if (desc.DedicatedSystemMemory > 0) {
-        pAdapterDetails->type = KGFX_ADAPTER_TYPE_INTEGRATED_GPU;
-    } else {
-        pAdapterDetails->type = KGFX_ADAPTER_TYPE_UNKNOWN;
-    }
-    
-    switch (desc.VendorId) {
-        case 0x1002:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_AMD;
-            break;
-        case 0x8086:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_INTEL;
-            break;
-        case 0x10DE:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_NVIDIA;
-            break;
-        case 0x13B5:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_ARM;
-            break;
-        case 0x5143:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_QUALCOMM;
-            break;
-        case 0x1010:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_IMGTEC;
-            break;
-        case 0x106B:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_APPLE;
-            break;
-        default:
-            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_UNKNOWN;
-            break;
-    }
-    
-    ID3D12Device* device;
-    result = D3D12CreateDevice((IUnknown*) adapter, D3D_FEATURE_LEVEL_11_0, KGFX_D3D12_IID(ID3D12Device, device));
-    if (FAILED(result)) {
-        KGFX_D3D12_CALL(adapter, Release);
-        return KGFX_RESULT_ENUMERATION_DONE;
-    }
-    
-    D3D12_FEATURE_DATA_D3D12_OPTIONS5 featuresSupport;
-    KGFX_D3D12_CALL(device, CheckFeatureSupport, D3D12_FEATURE_D3D12_OPTIONS5, &featuresSupport, sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS5));
-    KGFX_D3D12_CALL(device, Release);
-    
-    pAdapterDetails->maxTextureDimensions[0] = 16834;
-    pAdapterDetails->maxTextureDimensions[1] = 16834;
-    pAdapterDetails->maxTextureDimensions[2] = 2048;
-    pAdapterDetails->maxFramebufferDimensions[0] = 16384;
-    pAdapterDetails->maxFramebufferDimensions[1] = 16384;
-    pAdapterDetails->maxFramebufferDimensions[2] = 2048;
-    pAdapterDetails->maxViewportDimensions[0] = 16384;
-    pAdapterDetails->maxViewportDimensions[1] = 16384;
-    
-    pAdapterDetails->maxViewports = UINT32_MAX;
-    pAdapterDetails->maxScissorRects = UINT32_MAX;
-    pAdapterDetails->maxVertexInputAttributes = UINT32_MAX;
-    pAdapterDetails->maxVertexInputBindings = UINT32_MAX;
-    pAdapterDetails->maxVertexInputAttributeOffset = UINT32_MAX;
-    pAdapterDetails->maxVertexInputBindingStride = UINT32_MAX;
-    pAdapterDetails->maxVertexOutputComponents = UINT32_MAX;
-    pAdapterDetails->maxColorAttachments = UINT32_MAX;
-    pAdapterDetails->maxAnisotropy = 16.0f;
-    
-    pAdapterDetails->supportsGraphics = KGFX_TRUE;
-    pAdapterDetails->supportsCompute = KGFX_TRUE;
-    pAdapterDetails->supportsRayTracing = featuresSupport.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
-    
-    pAdapterDetails->dedicatedMemoryGPU = desc.DedicatedVideoMemory;
-    pAdapterDetails->dedicatedMemoryCPU = desc.DedicatedSystemMemory;
-    pAdapterDetails->sharedMemory = desc.SharedSystemMemory;
-    pAdapterDetails->maxMemory = desc.DedicatedVideoMemory + desc.DedicatedSystemMemory + desc.SharedSystemMemory;
-    
-    snprintf((char*) pAdapterDetails->name, 64, "%ls", desc.Description);
-    KGFX_D3D12_CALL(adapter, Release);
-    return KGFX_RESULT_ENUMERATION_IN_PROGRESS;
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 KGFXResult kgfxCreateDevice_d3d12(KGFXInstance instance, uint32_t adapterID, KGFXDevice* pDevice) {
-    KGFXInstance_D3D12_t* d3d12Instance = (KGFXInstance_D3D12_t*) instance;
-    
-    IDXGIAdapter1* adapter;
-    HRESULT result = KGFX_D3D12_CALL(d3d12Instance->factory, EnumAdapters1, adapterID, &adapter);
-    if (FAILED(result)) {
-        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
-    }
-    
-    ID3D12Device* device;
-    result = D3D12CreateDevice((IUnknown*) adapter, D3D_FEATURE_LEVEL_11_0, KGFX_D3D12_IID(ID3D12Device, device));
-    if (FAILED(result)) {
-        KGFX_D3D12_CALL(adapter, Release);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    KGFXDevice_D3D12_t* d3d12Device = (KGFXDevice_D3D12_t*) malloc(sizeof(KGFXDevice_D3D12_t));
-    if (d3d12Device == NULL) {
-        KGFX_D3D12_CALL(device, Release);
-        KGFX_D3D12_CALL(adapter, Release);
-        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
-    }
-    
-    /* (low-medium) TODO: D3D12 debugging / validation */
-    
-    d3d12Device->obj.api = KGFX_INSTANCE_API_D3D12;
-    d3d12Device->obj.instance = instance;
-    d3d12Device->device = device;
-    
-    *pDevice = &d3d12Device->obj;
-    KGFX_D3D12_CALL(adapter, Release);
-    return KGFX_RESULT_SUCCESS;
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 void kgfxDestroyDevice_d3d12(KGFXDevice device) {
-    KGFXDevice_D3D12_t* d3d12Device = (KGFXDevice_D3D12_t*) device;
-    KGFX_D3D12_CALL(d3d12Device->device, Release);
-    free(d3d12Device);
+
 }
 
 /* (medium) TODO: D3D12 buffers */
@@ -7647,10 +7680,6 @@ KGFXTexture kgfxGetSwapchainBackbuffer(KGFXSwapchain swapchain) {
 }
 
 #endif /* KGFX_IMPLEMENTATION */
-
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 
 #ifdef KGFX_PLUSPLUS
 } /* namespace ckgfx */

@@ -12,3 +12,4 @@ void main() {
     vec4 color = texture(sampler2D(uniformTexture, uniformSampler), vertexUV);
     outColor = color;
 }
+

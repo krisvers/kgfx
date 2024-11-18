@@ -86,18 +86,205 @@ void debugCallbackKGFX(KGFXInstance instance, KGFXDebugSeverity severity, KGFXDe
     printf("[KGFX] %s\n", message);
 }
 
-static const char* apiStrings[] = { "Vulkan", "D3D12", "Metal", "Unknown API" };
+static const char* apiStrings[] = {  "Unknown API", "Vulkan", "D3D12", "Metal", "D3D11" };
 
 const char* getApiString(KGFXInstanceAPI api) {
     if (api == KGFX_INSTANCE_API_VULKAN) {
-        return apiStrings[0];
-    } else if (api == KGFX_INSTANCE_API_D3D12) {
         return apiStrings[1];
-    } else if (api == KGFX_INSTANCE_API_METAL) {
+    } else if (api == KGFX_INSTANCE_API_D3D12) {
         return apiStrings[2];
+    } else if (api == KGFX_INSTANCE_API_METAL) {
+        return apiStrings[3];
+    } else if (api == KGFX_INSTANCE_API_D3D11) {
+        return apiStrings[4];
     }
     
-    return apiStrings[3];
+    return apiStrings[0];
+}
+
+KGFXBool loadFile(const char* filename, char** ppData, size_t* pSize) {
+    FILE* fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        return KGFX_FALSE;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    *pSize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    *ppData = (char*) malloc(*pSize);
+    if (*ppData == NULL) {
+        fclose(fp);
+        return KGFX_FALSE;
+    }
+
+    fread(*ppData, 1, *pSize, fp);
+    fclose(fp);
+
+    return KGFX_TRUE;
+}
+
+KGFXResult createShaderHLSL(TestKGFXState* pState) {
+    char* source;
+    size_t length;
+    if (!loadFile("shaders/src/shader_hlsl.hlsl", &source, &length)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    KGFXShader shader;
+    KGFXResult result = kgfxCreateShaderHLSL(pState->device, source, (uint32_t) length, "vs_main", KGFX_SHADER_STAGE_VERTEX, 5, 0, 0, NULL, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(source);
+        return result;
+    }
+
+    pState->vertexShader = shader;
+
+    result = kgfxCreateShaderHLSL(pState->device, source, (uint32_t) length, "ps_main", KGFX_SHADER_STAGE_FRAGMENT, 5, 0, 0, NULL, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(source);
+        return result;
+    }
+
+    free(source);
+    pState->fragmentShader = shader;
+
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult createShaderDXBC(TestKGFXState* pState) {
+    char* vsource;
+    size_t vlength;
+    if (!loadFile("shaders/bin/vshader.dxbc", &vsource, &vlength)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    KGFXShader shader;
+    KGFXResult result = kgfxCreateShaderDXBC(pState->device, vsource, (uint32_t) vlength, "vs_main", KGFX_SHADER_STAGE_VERTEX, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(vsource);
+        return result;
+    }
+
+    free(vsource);
+    pState->vertexShader = shader;
+
+    char* psource;
+    size_t plength;
+    if (!loadFile("shaders/bin/pshader.dxbc", &psource, &plength)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    result = kgfxCreateShaderDXBC(pState->device, psource, (uint32_t) plength, "ps_main", KGFX_SHADER_STAGE_FRAGMENT, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(psource);
+        return result;
+    }
+
+    free(psource);
+    pState->fragmentShader = shader;
+
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult createShaderGLSL(TestKGFXState* pState) {
+    char* vsource;
+    size_t vlength;
+    if (!loadFile("shaders/src/shader.vert.glsl", &vsource, &vlength)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    KGFXShader shader;
+    KGFXResult result = kgfxCreateShaderGLSL(pState->device, vsource, (uint32_t) vlength, "main", KGFX_SHADER_STAGE_VERTEX, 450, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(vsource);
+        return result;
+    }
+
+    free(vsource);
+    pState->vertexShader = shader;
+
+    char* fsource;
+    size_t flength;
+    if (!loadFile("shaders/src/shader.frag.glsl", &fsource, &flength)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    result = kgfxCreateShaderGLSL(pState->device, fsource, (uint32_t) flength, "main", KGFX_SHADER_STAGE_FRAGMENT, 450, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(fsource);
+        return result;
+    }
+
+    free(fsource);
+    pState->fragmentShader = shader;
+
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult createShaderSPIRV(TestKGFXState* pState) {
+    char* vsource;
+    size_t vlength;
+    if (!loadFile("shaders/bin/vshader.spv", &vsource, &vlength)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    KGFXShader shader;
+    KGFXResult result = kgfxCreateShaderSPIRV(pState->device, vsource, (uint32_t) vlength, "main", KGFX_SHADER_STAGE_VERTEX, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(vsource);
+        return result;
+    }
+
+    free(vsource);
+    pState->vertexShader = shader;
+
+    char* fsource;
+    size_t flength;
+    if (!loadFile("shaders/bin/fshader.spv", &fsource, &flength)) {
+        return KGFX_RESULT_ERROR_UNKNOWN;
+    }
+
+    result = kgfxCreateShaderSPIRV(pState->device, fsource, (uint32_t) flength, "main", KGFX_SHADER_STAGE_FRAGMENT, &shader);
+    if (result != KGFX_RESULT_SUCCESS) {
+        free(fsource);
+        return result;
+    }
+
+    free(fsource);
+    pState->fragmentShader = shader;
+
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult createShaders(TestKGFXState* pState) {
+    KGFXResult result = createShaderHLSL(pState);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create HLSL shader(s) on %s falling back to GLSL\n", pState->apiString);
+    } else {
+        return result;
+    }
+
+    result = createShaderGLSL(pState);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create GLSL shader(s) on %s falling back to DXBC\n", pState->apiString);
+    } else {
+        return result;
+    }
+
+    result = createShaderDXBC(pState);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create DXBC shader(s) on %s falling back to SPIRV\n", pState->apiString);
+    } else {
+        return result;
+    }
+
+    result = createShaderSPIRV(pState);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create SPIRV shader(s) on %s\n", pState->apiString);
+    }
+
+    return result;
 }
 
 KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI api) {
@@ -209,19 +396,9 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
 
     pState->backbuffer = kgfxGetSwapchainBackbuffer(pState->swapchain);
     
-    #include "shader.vert.spv.h"
-    #include "shader.frag.spv.h"
-    
-    result = kgfxCreateShaderSPIRV(pState->device, vertexShaderSPIRV, sizeof(vertexShaderSPIRV), "main", KGFX_SHADER_STAGE_VERTEX, &pState->vertexShader);
+    result = createShaders(pState);
     if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create SPIR-V vertex shader on %s\n", pState->apiString);
-        destroyTestState(pState);
-        return result;
-    }
-    
-    result = kgfxCreateShaderSPIRV(pState->device, fragmentShaderSPIRV, sizeof(fragmentShaderSPIRV), "main", KGFX_SHADER_STAGE_FRAGMENT, &pState->fragmentShader);
-    if (result != KGFX_RESULT_SUCCESS) {
-        printf("Failed to create SPIR-V fragment shader on %s\n", pState->apiString);
+        printf("Failed to create shader(s) on %s\n", pState->apiString);
         destroyTestState(pState);
         return result;
     }
@@ -573,7 +750,7 @@ KGFXResult testLoop(TestKGFXState* pState) {
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
-#define API_COUNT 3
+#define API_COUNT 4
 
 int main() {
     if (!glfwInit()) {
@@ -582,7 +759,7 @@ int main() {
     }
     
     uint32_t current = 0;
-    KGFXInstanceAPI apis[API_COUNT] = { KGFX_INSTANCE_API_VULKAN, KGFX_INSTANCE_API_D3D12, KGFX_INSTANCE_API_METAL };
+    KGFXInstanceAPI apis[API_COUNT] = { KGFX_INSTANCE_API_VULKAN, KGFX_INSTANCE_API_D3D12, KGFX_INSTANCE_API_METAL, KGFX_INSTANCE_API_D3D11 };
     TestKGFXState states[API_COUNT];
     GLFWwindow* windows[API_COUNT];
     memset(&states, 0, sizeof(states));
