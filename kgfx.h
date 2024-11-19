@@ -2678,8 +2678,6 @@ KGFXResult kgfxEnumerateAdapters_vulkan(KGFXInstance instance, uint32_t adapterI
             pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_UNKNOWN;
             break;
     }
-
-    printf("vendor id: %x\n", properties.vendorID);
     
     pAdapterDetails->maxTextureDimensions[0] = properties.limits.maxImageDimension1D;
     pAdapterDetails->maxTextureDimensions[1] = properties.limits.maxImageDimension2D;
@@ -5697,88 +5695,275 @@ KGFXResult kgfx_vulkan_createSurfaceCocoa(VkInstance instance, void* nsWindow, V
 #endif /* #ifndef __cplusplus */
 
 #include <d3d11.h>
+#include <dxgi.h>
 
 typedef struct KGFXInstance_D3D11_t {
-    KGFXInstance obj;
+    KGFXObject obj;
+
+    KGFXInstanceCreateFlagBits flags;
+    KGFXDebugCallbackPFN debugCallback;
+} KGFXInstance_D3D11_t;
+
+typedef struct KGFXDevice_D3D11_t {
+    KGFXObject obj;
+    uint32_t adapterID;
 
     struct {
         ID3D11Device* device;
         ID3D11DeviceContext* context;
     } d3d11;
-} KGFXInstance_D3D11_t;
+} KGFXDevice_D3D11_t;
 
 KGFXResult kgfxCreateInstance_d3d11(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
+    KGFXInstance_D3D11_t* d3d11Instance = (KGFXInstance_D3D11_t*) malloc(sizeof(KGFXInstance_D3D11_t));
+    if (d3d11Instance == NULL) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    memset(d3d11Instance, 0, sizeof(KGFXInstance_D3D11_t));
+    d3d11Instance->obj.api = KGFX_INSTANCE_API_D3D11;
+    d3d11Instance->flags = flags;
+    
+    *pInstance = &d3d11Instance->obj;
+    return KGFX_RESULT_SUCCESS;
+}
+
+void kgfxDestroyInstance_d3d11(KGFXInstance instance) {
+    KGFXInstance_D3D11_t* d3d11Instance = (KGFXInstance_D3D11_t*) instance;
+    free(d3d11Instance);
+}
+
+KGFXResult kgfxDebugRegisterCallback_d3d11(KGFXInstance instance, KGFXDebugCallbackPFN callback) {
+    KGFXInstance_D3D11_t* d3d11Instance = (KGFXInstance_D3D11_t*) instance;
+    d3d11Instance->debugCallback = callback;
+    return KGFX_RESULT_SUCCESS;
+}
+
+KGFXResult kgfxEnumerateAdapters_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXAdapterDetails* pAdapterDetails) {
+    IDXGIFactory* factory;
+    if (CreateDXGIFactory(__uuidof(IDXGIFactory), (void**) &factory) != S_OK) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    IDXGIAdapter* adapter;
+    if (factory->EnumAdapters(deviceID, &adapter) != S_OK) {
+        factory->Release();
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+    
+    DXGI_ADAPTER_DESC adapterDesc;
+    if (adapter->GetDesc(&adapterDesc) != S_OK) {
+        adapter->Release();
+        factory->Release();
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    pAdapterDetails->type = adapterDesc.DedicatedVideoMemory > 0 ? KGFX_ADAPTER_TYPE_DEDICATED_GPU : KGFX_ADAPTER_TYPE_INTEGRATED_GPU;
+
+    switch (adapterDesc.VendorId) {
+        case 0x10DE:
+            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_NVIDIA;
+            break;
+        case 0x1002:
+            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_AMD;
+            break;
+        case 0x8086:
+            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_INTEL;
+            break;
+        default:
+            pAdapterDetails->vendor = KGFX_ADAPTER_VENDOR_UNKNOWN;
+            break;
+    }
+
+    pAdapterDetails->maxTextureDimensions[0] = D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+    pAdapterDetails->maxTextureDimensions[1] = D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+    pAdapterDetails->maxTextureDimensions[2] = D3D11_REQ_TEXTURE3D_U_V_OR_W_DIMENSION;
+
+    pAdapterDetails->maxFramebufferDimensions[0] = pAdapterDetails->maxTextureDimensions[0];
+    pAdapterDetails->maxFramebufferDimensions[1] = pAdapterDetails->maxTextureDimensions[1];
+    pAdapterDetails->maxFramebufferDimensions[2] = pAdapterDetails->maxTextureDimensions[2];
+
+    pAdapterDetails->maxViewportDimensions[0] = D3D11_VIEWPORT_BOUNDS_MAX;
+    pAdapterDetails->maxViewportDimensions[1] = D3D11_VIEWPORT_BOUNDS_MAX;
+
+    pAdapterDetails->maxViewports = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+    pAdapterDetails->maxScissorRects = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+
+    /* TODO: */
+
+    WideCharToMultiByte(CP_ACP, 0, adapterDesc.Description, -1, (LPSTR) pAdapterDetails->name, sizeof(pAdapterDetails->name), NULL, NULL);
+    
+    adapter->Release();
+    factory->Release();
+    return KGFX_RESULT_ENUMERATION_IN_PROGRESS;
+}
+
+KGFXResult kgfxCreateDevice_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXDevice* pDevice) {
+    IDXGIFactory* factory;
+    if (CreateDXGIFactory(IID_PPV_ARGS(&factory)) != S_OK) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    IDXGIAdapter* adapter;
+    if (factory->EnumAdapters(deviceID, &adapter) != S_OK) {
+        factory->Release();
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+    
+    D3D_FEATURE_LEVEL featureLevels[] = {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0
+    };
+    
+    ID3D11Device* device;
+    ID3D11DeviceContext* context;
+    if (D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0, featureLevels, sizeof(featureLevels) / sizeof(D3D_FEATURE_LEVEL), D3D11_SDK_VERSION, &device, NULL, &context) != S_OK) {
+        adapter->Release();
+        factory->Release();
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) malloc(sizeof(KGFXDevice_D3D11_t));
+    if (d3d11Device == NULL) {
+        context->Release();
+        device->Release();
+        adapter->Release();
+        factory->Release();
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+    
+    memset(d3d11Device, 0, sizeof(KGFXDevice_D3D11_t));
+    d3d11Device->obj.api = KGFX_INSTANCE_API_D3D11;
+    d3d11Device->obj.instance = instance;
+    d3d11Device->adapterID = deviceID;
+    d3d11Device->d3d11.device = device;
+    d3d11Device->d3d11.context = context;
+    
+    *pDevice = &d3d11Device->obj;
+    return KGFX_RESULT_SUCCESS;
+}
+void kgfxDestroyDevice_d3d11(KGFXDevice device) {}
+
+KGFXResult kgfxCreateBuffer_d3d11(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
-void kgfxDestroyInstance_d3d11(KGFXInstance instance);
+void kgfxDestroyBuffer_d3d11(KGFXBuffer buffer) {}
 
-KGFXResult kgfxDebugRegisterCallback_d3d11(KGFXInstance instance, KGFXDebugCallbackPFN callback);
+KGFXResult kgfxMapBuffer_d3d11(KGFXBuffer buffer, void** ppData) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxEnumerateAdapters_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXAdapterDetails* pAdapterDetails);
-KGFXResult kgfxCreateDevice_d3d11(KGFXInstance instance, uint32_t deviceID, KGFXDevice* pDevice);
-void kgfxDestroyDevice_d3d11(KGFXDevice device);
+void kgfxUnmapBuffer_d3d11(KGFXBuffer buffer) {}
 
-KGFXResult kgfxCreateBuffer_d3d11(KGFXDevice device, uint64_t size, KGFXBufferUsageMask usage, KGFXResourceLocation location, KGFXBuffer* pBuffer);
-void kgfxDestroyBufferd3d11(KGFXBuffer buffer);
+KGFXResult kgfxUploadBuffer_d3d11(KGFXBuffer buffer, const void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxMapBuffer_d3d11(KGFXBuffer buffer, void** ppData);
-void kgfxUnmapBuffer_d3d11(KGFXBuffer buffer);
+KGFXResult kgfxDownloadBuffer_d3d11(KGFXBuffer buffer, void* pData, uint64_t size) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxUploadBuffer_d3d11(KGFXBuffer buffer, const void* pData, uint64_t size);
-KGFXResult kgfxDownloadBuffer_d3d11(KGFXBuffer buffer, void* pData, uint64_t size);
 
-KGFXResult kgfxCreateTexture_d3d11(KGFXDevice device, const KGFXTextureDesc* pTextureDesc, KGFXTexture* pTexture);
-void kgfxDestroyTexture_d3d11(KGFXTexture texture);
+KGFXResult kgfxCreateTexture_d3d11(KGFXDevice device, const KGFXTextureDesc* pTextureDesc, KGFXTexture* pTexture) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxUploadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
-KGFXResult kgfxDownloadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc);
+void kgfxDestroyTexture_d3d11(KGFXTexture texture) {}
 
-KGFXResult kgfxCreateSampler_d3d11(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler);
-void kgfxDestroySampler_d3d11(KGFXSampler sampler);
+KGFXResult kgfxUploadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxCreateShaderSPIRV_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
-KGFXResult kgfxCreateShaderDXBC_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader);
-KGFXResult kgfxCreateShaderGLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader);
-KGFXResult kgfxCreateShaderHLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t shaderModelMajor, uint32_t shaderModelMinor, uint32_t macroDefineCount, const KGFXMacroDefineHLSL* pMacroDefines, KGFXShader* pShader);
-void kgfxDestroyShader_d3d11(KGFXShader shader);
+KGFXResult kgfxDownloadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxCreateCommandPool_d3d11(KGFXDevice device, uint32_t maxCommandLists, KGFXQueueType queueType, KGFXCommandPool* pCommandPool);
-void kgfxDestroyCommandPool_d3d11(KGFXCommandPool commandPool);
 
-KGFXResult kgfxCreateCommandList_d3d11(KGFXCommandPool commandPool, KGFXCommandList* pCommandList);
-void kgfxDestroyCommandList_d3d11(KGFXCommandList commandList);
-void kgfxResetCommandList_d3d11(KGFXCommandList commandList);
+KGFXResult kgfxCreateSampler_d3d11(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxOpenCommandList_d3d11(KGFXCommandList commandList, KGFXBool isOneTime);
-KGFXResult kgfxCloseCommandList_d3d11(KGFXCommandList commandList);
-KGFXResult kgfxSubmitCommandList_d3d11(KGFXCommandList commandList);
+void kgfxDestroySampler_d3d11(KGFXSampler sampler) {}
 
-void kgfxCmdBindGraphicsPipeline_d3d11(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline);
-void kgfxCmdSetViewportAndScissor_d3d11(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors);
-void kgfxCmdBindRenderTargets_d3d11(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget);
-void kgfxCmdBeginRendering_d3d11(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue);
-void kgfxCmdEndRendering_d3d11(KGFXCommandList commandList);
+KGFXResult kgfxCreateShaderSPIRV_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-void kgfxCmdBindUniformBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
-void kgfxCmdBindStorageBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size);
-void kgfxCmdBindUniformTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
-void kgfxCmdBindStorageTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture);
-void kgfxCmdBindSampler_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler);
+KGFXResult kgfxCreateShaderDXBC_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-void kgfxCmdBindIndexBuffer_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType);
-void kgfxCmdBindVertexBuffers_d3d11(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets);
-void kgfxCmdDraw_d3d11(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex);
-void kgfxCmdDrawIndexed_d3d11(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance);
-void kgfxCmdDrawIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
-void kgfxCmdDrawIndexedIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride);
+KGFXResult kgfxCreateShaderGLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxPresentSwapchain_d3d11(KGFXSwapchain swapchain);
+KGFXResult kgfxCreateShaderHLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t shaderModelMajor, uint32_t shaderModelMinor, uint32_t macroDefineCount, const KGFXMacroDefineHLSL* pMacroDefines, KGFXShader* pShader) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
 
-KGFXResult kgfxCreateSwapchainWin32_d3d11(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain);
-void kgfxDestroySwapchain_d3d11(KGFXSwapchain swapchain);
+void kgfxDestroyShader_d3d11(KGFXShader shader) {}
 
-KGFXTexture kgfxGetSwapchainBackbuffer_d3d11(KGFXSwapchain swapchain);
+KGFXResult kgfxCreateCommandPool_d3d11(KGFXDevice device, uint32_t maxCommandLists, KGFXQueueType queueType, KGFXCommandPool* pCommandPool) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroyCommandPool_d3d11(KGFXCommandPool commandPool) {}
+
+KGFXResult kgfxCreateCommandList_d3d11(KGFXCommandPool commandPool, KGFXCommandList* pCommandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroyCommandList_d3d11(KGFXCommandList commandList) {}
+void kgfxResetCommandList_d3d11(KGFXCommandList commandList) {}
+
+KGFXResult kgfxOpenCommandList_d3d11(KGFXCommandList commandList, KGFXBool isOneTime) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxCloseCommandList_d3d11(KGFXCommandList commandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+KGFXResult kgfxSubmitCommandList_d3d11(KGFXCommandList commandList) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+
+void kgfxCmdBindGraphicsPipeline_d3d11(KGFXCommandList commandList, KGFXGraphicsPipeline pipeline) {}
+void kgfxCmdSetViewportAndScissor_d3d11(KGFXCommandList commandList, uint32_t viewportAndScissorCount, KGFXViewport* pViewports, KGFXScissor* pScissors) {}
+void kgfxCmdBindRenderTargets_d3d11(KGFXCommandList commandList, uint32_t renderTargetCount, KGFXTexture* pRenderTargets, KGFXTexture depthStencilTarget) {}
+void kgfxCmdBeginRendering_d3d11(KGFXCommandList commandList, uint32_t renderTargetClearValueCount, KGFXClearValue* pRenderTargetClearValues, KGFXClearValue* pDepthStencilClearValue) {}
+void kgfxCmdEndRendering_d3d11(KGFXCommandList commandList) {}
+
+void kgfxCmdBindUniformBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {}
+void kgfxCmdBindStorageBuffer_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXBuffer buffer, uint64_t offset, uint64_t size) {}
+void kgfxCmdBindUniformTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {}
+void kgfxCmdBindStorageTexture_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXTexture texture) {}
+void kgfxCmdBindSampler_d3d11(KGFXCommandList commandList, KGFXUniformBinding binding, KGFXSampler sampler) {}
+
+void kgfxCmdBindIndexBuffer_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, KGFXIndexType indexType) {}
+void kgfxCmdBindVertexBuffers_d3d11(KGFXCommandList commandList, uint32_t firstBinding, uint32_t bindingCount, KGFXBuffer* pBuffers, uint64_t* pOffsets) {}
+void kgfxCmdDraw_d3d11(KGFXCommandList commandList, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstIndex) {}
+void kgfxCmdDrawIndexed_d3d11(KGFXCommandList commandList, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {}
+void kgfxCmdDrawIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {}
+void kgfxCmdDrawIndexedIndirect_d3d11(KGFXCommandList commandList, KGFXBuffer buffer, uint64_t offset, uint32_t drawCount, uint32_t stride) {}
+
+KGFXResult kgfxPresentSwapchain_d3d11(KGFXSwapchain swapchain) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+
+KGFXResult kgfxCreateSwapchainWin32_d3d11(KGFXDevice device, void* hwnd, void* hinstance, const KGFXSwapchainDesc* pSwapchainDesc, KGFXSwapchain* pSwapchain) {
+    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+}
+
+void kgfxDestroySwapchain_d3d11(KGFXSwapchain swapchain) {}
+
+KGFXTexture kgfxGetSwapchainBackbuffer_d3d11(KGFXSwapchain swapchain) {
+    return NULL;
+}
+
 
 #endif /* #ifdef KGFX_D3D11_IMPLEMENTATION */
 
@@ -6391,6 +6576,10 @@ KGFXResult kgfxCreateInstance(KGFXInstanceAPI api, KGFXInstanceCreateFlagBits fl
         case KGFX_INSTANCE_API_METAL:
             return kgfxCreateInstance_metal(flags, pInstance);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxCreateInstance_d3d11(flags, pInstance);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6417,6 +6606,11 @@ KGFX_API void kgfxDestroyInstance(KGFXInstance instance) {
             kgfxDestroyInstance_metal(instance);
             break;
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            kgfxDestroyInstance_d3d11(instance);
+            break;
+#endif /* KGFX_D3D11 */
         default:
             break;
     }
@@ -6440,6 +6634,10 @@ KGFXResult kgfxDebugRegisterCallback(KGFXInstance instance, KGFXDebugCallbackPFN
         case KGFX_INSTANCE_API_METAL:
             return kgfxDebugRegisterCallback_metal(instance, callback);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxDebugRegisterCallback_d3d11(instance, callback);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6463,6 +6661,10 @@ KGFXResult kgfxEnumerateAdapters(KGFXInstance instance, uint32_t adapterID, KGFX
         case KGFX_INSTANCE_API_METAL:
             return kgfxEnumerateAdapters_metal(instance, adapterID, pAdapterDetails);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxEnumerateAdapters_d3d11(instance, adapterID, pAdapterDetails);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6486,6 +6688,10 @@ KGFXResult kgfxCreateDevice(KGFXInstance instance, uint32_t adapterID, KGFXDevic
         case KGFX_INSTANCE_API_METAL:
             return kgfxCreateDevice_metal(instance, adapterID, pDevice);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxCreateDevice_d3d11(instance, adapterID, pDevice);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6512,6 +6718,11 @@ void kgfxDestroyDevice(KGFXDevice device) {
             kgfxDestroyDevice_metal(device);
             break;
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            kgfxDestroyDevice_d3d11(device);
+            break;
+#endif /* KGFX_D3D11 */
         default:
             break;
     }
@@ -6535,6 +6746,10 @@ KGFXResult kgfxCreateBuffer(KGFXDevice device, uint64_t size, KGFXBufferUsageMas
         case KGFX_INSTANCE_API_METAL:
             return kgfxCreateBuffer_metal(device, size, usage, location, pBuffer);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxCreateBuffer_d3d11(device, size, usage, location, pBuffer);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6561,6 +6776,11 @@ void kgfxDestroyBuffer(KGFXBuffer buffer) {
             kgfxDestroyBuffer_metal(buffer);
             break;
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            kgfxDestroyBuffer_d3d11(buffer);
+            break;
+#endif /* KGFX_D3D11 */
         default:
             break;
     }
@@ -6584,6 +6804,10 @@ KGFXResult kgfxMapBuffer(KGFXBuffer buffer, void** ppData) {
         case KGFX_INSTANCE_API_METAL:
             return kgfxMapBuffer_metal(buffer, ppData);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxMapBuffer_d3d11(buffer, ppData);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6610,6 +6834,11 @@ void kgfxUnmapBuffer(KGFXBuffer buffer) {
             kgfxUnmapBuffer_metal(buffer);
             break;
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            kgfxUnmapBuffer_d3d11(buffer);
+            break;
+#endif /* KGFX_D3D11 */
         default:
             break;
     }
@@ -6633,6 +6862,10 @@ KGFXResult kgfxUploadBuffer(KGFXBuffer buffer, const void* pData, uint64_t size)
         case KGFX_INSTANCE_API_METAL:
             return kgfxUploadBuffer_metal(buffer, pData, size);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxUploadBuffer_d3d11(buffer, pData, size);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6656,6 +6889,10 @@ KGFXResult kgfxDownloadBuffer(KGFXBuffer buffer, void* pData, uint64_t size) {
         case KGFX_INSTANCE_API_METAL:
             return kgfxDownloadBuffer_metal(buffer, pData, size);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxDownloadBuffer_d3d11(buffer, pData, size);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6679,6 +6916,10 @@ KGFXResult kgfxCreateTexture(KGFXDevice device, const KGFXTextureDesc* pTextureD
         case KGFX_INSTANCE_API_METAL:
             return kgfxCreateTexture_metal(device, pTextureDesc, pTexture);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxCreateTexture_d3d11(device, pTextureDesc, pTexture);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6705,6 +6946,11 @@ void kgfxDestroyTexture(KGFXTexture texture) {
             kgfxDestroyTexture_metal(texture);
             break;
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            kgfxDestroyTexture_d3d11(texture);
+            break;
+#endif /* KGFX_D3D11 */
         default:
             break;
     }
@@ -6728,6 +6974,10 @@ KGFXResult kgfxUploadTexture(KGFXTexture texture, void* pData, uint64_t size, co
         case KGFX_INSTANCE_API_METAL:
             return kgfxUploadTexture_metal(texture, pData, size, pTransferDesc);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxUploadTexture_d3d11(texture, pData, size, pTransferDesc);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6751,6 +7001,10 @@ KGFXResult kgfxDownloadTexture(KGFXTexture texture, void* pData, uint64_t size, 
         case KGFX_INSTANCE_API_METAL:
             return kgfxDownloadTexture_metal(texture, pData, size, pTransferDesc);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxDownloadTexture_d3d11(texture, pData, size, pTransferDesc);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6774,6 +7028,10 @@ KGFXResult kgfxCreateSampler(KGFXDevice device, const KGFXSamplerDesc* pSamplerD
         case KGFX_INSTANCE_API_METAL:
             return kgfxCreateSampler_metal(device, pSamplerDesc, pSampler);
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            return kgfxCreateSampler_d3d11(device, pSamplerDesc, pSampler);
+#endif /* KGFX_D3D11 */
         default:
             return KGFX_RESULT_ERROR_UNSUPPORTED;
     }
@@ -6800,6 +7058,11 @@ void kgfxDestroySampler(KGFXSampler sampler) {
             kgfxDestroySampler_metal(sampler);
             break;
 #endif /* KGFX_METAL */
+#ifdef KGFX_D3D11
+        case KGFX_INSTANCE_API_D3D11:
+            kgfxDestroySampler_d3d11(sampler);
+            break;
+#endif /* KGFX_D3D11 */
         default:
             break;
     }
