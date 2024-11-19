@@ -739,12 +739,6 @@ KGFXResult testLoop(TestKGFXState* pState) {
         return result;
     }
 
-    glfwPollEvents();
-#ifdef KGFX_WIN32
-    Sleep(2);
-#else
-    usleep(2000);
-#endif /* #ifdef KGFX_WIN32 */
     return KGFX_RESULT_SUCCESS;
 }
 
