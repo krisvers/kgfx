@@ -1,8 +1,8 @@
 struct Vertex
 {
-    float3 position : POSITION;
-    float3 color : COLOR;
-    float2 texcoord : TEXCOORD;
+    float3 position : INPUT0;
+    float3 color : INPUT1;
+    float2 texcoord : INPUT2;
 };
 
 struct Pixel

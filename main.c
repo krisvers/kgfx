@@ -127,7 +127,7 @@ KGFXBool loadFile(const char* filename, char** ppData, size_t* pSize) {
 KGFXResult createShaderHLSL(TestKGFXState* pState) {
     char* source;
     size_t length;
-    if (!loadFile("shaders/src/shader_hlsl.hlsl", &source, &length)) {
+    if (!loadFile("shaders/src/shader.hlsl", &source, &length)) {
         return KGFX_RESULT_ERROR_UNKNOWN;
     }
 
@@ -432,14 +432,17 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
     attributeDescs[0].location = 0;
     attributeDescs[0].offset = offsetof(Vertex, x);
     attributeDescs[0].format = KGFX_FORMAT_R32G32B32_FLOAT;
+    attributeDescs[0].semanticName = NULL;
     attributeDescs[1].binding = 0;
     attributeDescs[1].location = 1;
     attributeDescs[1].offset = offsetof(Vertex, r);
     attributeDescs[1].format = KGFX_FORMAT_R32G32B32_FLOAT;
+    attributeDescs[1].semanticName = NULL;
     attributeDescs[2].binding = 0;
     attributeDescs[2].location = 2;
     attributeDescs[2].offset = offsetof(Vertex, u);
     attributeDescs[2].format = KGFX_FORMAT_R32G32_FLOAT;
+    attributeDescs[2].semanticName = NULL;
     
     KGFXGraphicsPipelineDesc pipelineDesc;
     pipelineDesc.cullMode = KGFX_CULL_MODE_NONE;

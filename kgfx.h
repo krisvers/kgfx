@@ -308,10 +308,6 @@ typedef enum KGFXBlendFactor {
     KGFX_BLEND_FACTOR_DST_ALPHA = 8,
     KGFX_BLEND_FACTOR_INVERTED_SRC_ALPHA = 9,
     KGFX_BLEND_FACTOR_INVERTED_DST_ALPHA = 10,
-    KGFX_BLEND_FACTOR_CONST_COLOR = 11,
-    KGFX_BLEND_FACTOR_INVERTED_CONST_COLOR = 12,
-    KGFX_BLEND_FACTOR_CONST_ALPHA = 13,
-    KGFX_BLEND_FACTOR_INVERTED_CONST_ALPHA = 14,
 } KGFXBlendFactor;
 
 typedef enum KGFXColorMaskFlag {
@@ -482,9 +478,15 @@ typedef struct KGFXVertexBindingDesc {
 
 typedef struct KGFXVertexAttributeDesc {
     uint32_t binding;
-    uint32_t location;
     uint32_t offset;
     KGFXFormat format;
+
+    /* Vulkan/OpenGL style attribute referencing */
+    uint32_t location;
+
+    /* D3D style attribute referencing (defaults to INPUT[location] (like INPUT0 or INPUT2) */
+    const char* semanticName; /* (if semanticName is NULL, default to INPUT) */
+    uint32_t semanticIndex; /* (if semanticName is NULL, default to location) */
 } KGFXVertexAttributeDesc;
 
 typedef struct KGFXVertexInputDesc {
@@ -1955,18 +1957,6 @@ KGFXBool kgfx_vulkan_vkBlendFactor(KGFXBlendFactor factor, VkBlendFactor* pFacto
             break;
         case KGFX_BLEND_FACTOR_INVERTED_DST_ALPHA:
             *pFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
-            break;
-        case KGFX_BLEND_FACTOR_CONST_COLOR:
-            *pFactor = VK_BLEND_FACTOR_CONSTANT_COLOR;
-            break;
-        case KGFX_BLEND_FACTOR_INVERTED_CONST_COLOR:
-            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
-            break;
-        case KGFX_BLEND_FACTOR_CONST_ALPHA:
-            *pFactor = VK_BLEND_FACTOR_CONSTANT_ALPHA;
-            break;
-        case KGFX_BLEND_FACTOR_INVERTED_CONST_ALPHA:
-            *pFactor = VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
             break;
         default:
             return KGFX_FALSE;
@@ -5698,7 +5688,12 @@ KGFXResult kgfx_vulkan_createSurfaceCocoa(VkInstance instance, void* nsWindow, V
 #endif /* #ifndef __cplusplus */
 
 #include <d3d11.h>
+#include <d3dcompiler.h>
 #include <dxgi.h>
+#include <dxgidebug.h>
+
+#include <string>
+#include <vector>
 
 typedef struct KGFXInstance_D3D11_t {
     KGFXObject obj;
@@ -5775,6 +5770,47 @@ typedef struct KGFXSwapchain_D3D11_t {
         ID3D11RenderTargetView* backbufferRTV;
     } d3d11;
 } KGFXSwapchain_D3D11_t;
+
+typedef struct KGFXSampler_D3D11_t {
+    KGFXObject obj;
+    KGFXDevice device;
+
+    struct {
+        ID3D11SamplerState* sampler;
+    } d3d11;
+} KGFXSampler_D3D11_t;
+
+typedef struct KGFXShader_D3D11_t {
+    KGFXObject obj;
+    KGFXDevice device;
+    
+    KGFXShaderStage stage;
+
+    struct {
+        ID3D11DeviceChild* shader;
+        ID3DBlob* vblob;
+    } d3d11;
+} KGFXShader_D3D11_t;
+
+typedef struct KGFXGraphicsPipeline_D3D11_t {
+    KGFXObject obj;
+    KGFXDevice device;
+
+    struct {
+        ID3D11InputLayout* inputLayout;
+        ID3D11BlendState* blendState;
+        ID3D11DepthStencilState* depthStencilState;
+        ID3D11RasterizerState* rasterizerState;
+
+        struct {
+            ID3D11VertexShader* vertexShader;
+            ID3D11PixelShader* pixelShader;
+            ID3D11GeometryShader* geometryShader;
+            ID3D11HullShader* hullShader;
+            ID3D11DomainShader* domainShader;
+        } shaders;
+    } d3d11;
+} KGFXGraphicsPipeline_D3D11_t;
 
 KGFXBool kgfx_d3d11_dxgiFormat(KGFXFormat format, DXGI_FORMAT* pFormat) {
     switch (format) {
@@ -5939,7 +5975,323 @@ KGFXBool kgfx_d3d11_dxgiSwapEffect(KGFXPresentMode mode, DXGI_SWAP_EFFECT* pEffe
     }
 
     return KGFX_TRUE;
+}
 
+KGFXBool kgfx_d3d11_sampleFilter(KGFXTextureFilter magFilter, KGFXTextureFilter minFilter, KGFXTextureFilter mipMapFilter, D3D11_FILTER* pFilter) {
+    if (magFilter == KGFX_TEXTURE_FILTER_NEAREST && minFilter == KGFX_TEXTURE_FILTER_NEAREST && mipMapFilter == KGFX_TEXTURE_FILTER_NEAREST) {
+        *pFilter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_LINEAR && minFilter == KGFX_TEXTURE_FILTER_LINEAR && mipMapFilter == KGFX_TEXTURE_FILTER_LINEAR) {
+        *pFilter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_LINEAR && minFilter == KGFX_TEXTURE_FILTER_LINEAR && mipMapFilter == KGFX_TEXTURE_FILTER_NEAREST) {
+        *pFilter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_LINEAR && minFilter == KGFX_TEXTURE_FILTER_NEAREST && mipMapFilter == KGFX_TEXTURE_FILTER_NEAREST) {
+        *pFilter = D3D11_FILTER_MIN_LINEAR_MAG_MIP_POINT;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_LINEAR && minFilter == KGFX_TEXTURE_FILTER_NEAREST && mipMapFilter == KGFX_TEXTURE_FILTER_LINEAR) {
+        *pFilter = D3D11_FILTER_MIN_LINEAR_MAG_POINT_MIP_LINEAR;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_NEAREST && minFilter == KGFX_TEXTURE_FILTER_LINEAR && mipMapFilter == KGFX_TEXTURE_FILTER_NEAREST) {
+        *pFilter = D3D11_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_NEAREST && minFilter == KGFX_TEXTURE_FILTER_LINEAR && mipMapFilter == KGFX_TEXTURE_FILTER_LINEAR) {
+        *pFilter = D3D11_FILTER_MIN_POINT_MAG_MIP_LINEAR;
+    } else if (magFilter == KGFX_TEXTURE_FILTER_NEAREST && minFilter == KGFX_TEXTURE_FILTER_NEAREST && mipMapFilter == KGFX_TEXTURE_FILTER_LINEAR) {
+        *pFilter = D3D11_FILTER_MIN_MAG_POINT_MIP_LINEAR;
+    } else {
+        return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_textureAddressMode(KGFXSampleMode mode, D3D11_TEXTURE_ADDRESS_MODE* pMode) {
+    switch (mode) {
+        case KGFX_SAMPLE_MODE_REPEAT:
+            *pMode = D3D11_TEXTURE_ADDRESS_WRAP;
+            break;
+        case KGFX_SAMPLE_MODE_MIRROR:
+            *pMode = D3D11_TEXTURE_ADDRESS_MIRROR;
+            break;
+        case KGFX_SAMPLE_MODE_CLAMP:
+            *pMode = D3D11_TEXTURE_ADDRESS_CLAMP;
+            break;
+        case KGFX_SAMPLE_MODE_CLAMP_BORDER:
+            *pMode = D3D11_TEXTURE_ADDRESS_BORDER;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_sampleBorder(KGFXSampleBorder border, FLOAT* pX, FLOAT* pY, FLOAT* pZ, FLOAT* pW) {
+    switch (border) {
+        case KGFX_SAMPLE_BORDER_TRANSPARENT_BLACK_FLOAT:
+        case KGFX_SAMPLE_BORDER_TRANSPARENT_BLACK_INT:
+            *pX = 0.0f;
+            *pY = 0.0f;
+            *pZ = 0.0f;
+            *pW = 0.0f;
+            break;
+        case KGFX_SAMPLE_BORDER_OPAQUE_BLACK_FLOAT:
+        case KGFX_SAMPLE_BORDER_OPAQUE_BLACK_INT:
+            *pX = 0.0f;
+            *pY = 0.0f;
+            *pZ = 0.0f;
+            *pW = 1.0f;
+        case KGFX_SAMPLE_BORDER_OPAQUE_WHITE_FLOAT:
+        case KGFX_SAMPLE_BORDER_OPAQUE_WHITE_INT:
+            *pX = 1.0f;
+            *pY = 1.0f;
+            *pZ = 1.0f;
+            *pW = 1.0f;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_inputClass(KGFXVertexInputRate rate, D3D11_INPUT_CLASSIFICATION* pClass) {
+    switch (rate) {
+        case KGFX_VERTEX_INPUT_RATE_PER_VERTEX:
+            *pClass = D3D11_INPUT_PER_VERTEX_DATA;
+            break;
+        case KGFX_VERTEX_INPUT_RATE_PER_INSTANCE:
+            *pClass = D3D11_INPUT_PER_INSTANCE_DATA;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_fillMode(KGFXFillMode mode, D3D11_FILL_MODE* pMode) {
+    switch (mode) {
+        case KGFX_FILL_MODE_FILL:
+            *pMode = D3D11_FILL_SOLID;
+            break;
+        case KGFX_FILL_MODE_WIRE:
+            *pMode = D3D11_FILL_WIREFRAME;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_cullMode(KGFXCullMode mode, D3D11_CULL_MODE* pMode) {
+    switch (mode) {
+        case KGFX_CULL_MODE_NONE:
+            *pMode = D3D11_CULL_NONE;
+            break;
+        case KGFX_CULL_MODE_FRONT:
+            *pMode = D3D11_CULL_FRONT;
+            break;
+        case KGFX_CULL_MODE_BACK:
+            *pMode = D3D11_CULL_BACK;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_comparisonFunc(KGFXCompareOp op, D3D11_COMPARISON_FUNC* pFunc) {
+    switch (op) {
+        case KGFX_COMPARE_OP_NEVER:
+            *pFunc = D3D11_COMPARISON_NEVER;
+            break;
+        case KGFX_COMPARE_OP_LESS:
+            *pFunc = D3D11_COMPARISON_LESS;
+            break;
+        case KGFX_COMPARE_OP_EQUAL:
+            *pFunc = D3D11_COMPARISON_EQUAL;
+            break;
+        case KGFX_COMPARE_OP_GREATER:
+            *pFunc = D3D11_COMPARISON_GREATER;
+            break;
+        case KGFX_COMPARE_OP_LEQUAL:
+            *pFunc = D3D11_COMPARISON_LESS_EQUAL;
+            break;
+        case KGFX_COMPARE_OP_NEQUAL:
+            *pFunc = D3D11_COMPARISON_NOT_EQUAL;
+            break;
+        case KGFX_COMPARE_OP_GEQUAL:
+            *pFunc = D3D11_COMPARISON_GREATER_EQUAL;
+            break;
+        case KGFX_COMPARE_OP_ALWAYS:
+            *pFunc = D3D11_COMPARISON_ALWAYS;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_stencilOp(KGFXStencilOp op, D3D11_STENCIL_OP* pOp) {
+    switch (op) {
+        case KGFX_STENCIL_OP_KEEP:
+            *pOp = D3D11_STENCIL_OP_KEEP;
+            break;
+        case KGFX_STENCIL_OP_ZERO:
+            *pOp = D3D11_STENCIL_OP_ZERO;
+            break;
+        case KGFX_STENCIL_OP_REPLACE:
+            *pOp = D3D11_STENCIL_OP_REPLACE;
+            break;
+        case KGFX_STENCIL_OP_INCREM_CLAMP:
+            *pOp = D3D11_STENCIL_OP_INCR_SAT;
+            break;
+        case KGFX_STENCIL_OP_DECREM_CLAMP:
+            *pOp = D3D11_STENCIL_OP_DECR_SAT;
+            break;
+        case KGFX_STENCIL_OP_INVERT:
+            *pOp = D3D11_STENCIL_OP_INVERT;
+            break;
+        case KGFX_STENCIL_OP_INCREM:
+            *pOp = D3D11_STENCIL_OP_INCR;
+            break;
+        case KGFX_STENCIL_OP_DECREM:
+            *pOp = D3D11_STENCIL_OP_DECR;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_stencilOpDesc(const KGFXStencilOpDesc* pDescKGFX, D3D11_DEPTH_STENCILOP_DESC* pDescD3D11) {
+    if (!kgfx_d3d11_stencilOp(pDescKGFX->failOp, &pDescD3D11->StencilFailOp)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_stencilOp(pDescKGFX->passOp, &pDescD3D11->StencilPassOp)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_stencilOp(pDescKGFX->failDepthOp, &pDescD3D11->StencilDepthFailOp)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_comparisonFunc(pDescKGFX->compareOp, &pDescD3D11->StencilFunc)) {
+        return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_blend(KGFXBlendFactor factor, D3D11_BLEND* pBlend) {
+    switch (factor) {
+        case KGFX_BLEND_FACTOR_ZERO:
+            *pBlend = D3D11_BLEND_ZERO;
+            break;
+        case KGFX_BLEND_FACTOR_ONE:
+            *pBlend = D3D11_BLEND_ONE;
+            break;
+        case KGFX_BLEND_FACTOR_SRC_COLOR:
+            *pBlend = D3D11_BLEND_SRC_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_DST_COLOR:
+            *pBlend = D3D11_BLEND_DEST_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_SRC_COLOR:
+            *pBlend = D3D11_BLEND_INV_SRC_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_DST_COLOR:
+            *pBlend = D3D11_BLEND_INV_DEST_COLOR;
+            break;
+        case KGFX_BLEND_FACTOR_SRC_ALPHA:
+            *pBlend = D3D11_BLEND_SRC_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_DST_ALPHA:
+            *pBlend = D3D11_BLEND_DEST_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_SRC_ALPHA:
+            *pBlend = D3D11_BLEND_INV_SRC_ALPHA;
+            break;
+        case KGFX_BLEND_FACTOR_INVERTED_DST_ALPHA:
+            *pBlend = D3D11_BLEND_INV_DEST_ALPHA;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_blendOp(KGFXBlendOp op, D3D11_BLEND_OP* pOp) {
+    switch (op) {
+        case KGFX_BLEND_OP_ADD:
+            *pOp = D3D11_BLEND_OP_ADD;
+            break;
+        case KGFX_BLEND_OP_SUBTRACT:
+            *pOp = D3D11_BLEND_OP_SUBTRACT;
+            break;
+        case KGFX_BLEND_OP_REVERSE_SUBTRACT:
+            *pOp = D3D11_BLEND_OP_REV_SUBTRACT;
+            break;
+        case KGFX_BLEND_OP_MIN:
+            *pOp = D3D11_BLEND_OP_MIN;
+            break;
+        case KGFX_BLEND_OP_MAX:
+            *pOp = D3D11_BLEND_OP_MAX;
+            break;
+        default:
+            return KGFX_FALSE;
+    }
+
+    return KGFX_TRUE;
+}
+
+KGFXBool kgfx_d3d11_rtBlendDesc(KGFXRenderTargetDesc* pDescKGFX, D3D11_RENDER_TARGET_BLEND_DESC* pDescD3D11) {
+    pDescD3D11->BlendEnable = pDescKGFX->enableBlending;
+    if (!kgfx_d3d11_blend(pDescKGFX->srcColorBlendFactor, &pDescD3D11->SrcBlend)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_blend(pDescKGFX->dstColorBlendFactor, &pDescD3D11->DestBlend)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_blendOp(pDescKGFX->colorBlendOp, &pDescD3D11->BlendOp)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_blend(pDescKGFX->srcAlphaBlendFactor, &pDescD3D11->SrcBlendAlpha)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_blend(pDescKGFX->dstAlphaBlendFactor, &pDescD3D11->DestBlendAlpha)) {
+        return KGFX_FALSE;
+    }
+
+    if (!kgfx_d3d11_blendOp(pDescKGFX->alphaBlendOp, &pDescD3D11->BlendOpAlpha)) {
+        return KGFX_FALSE;
+    }
+
+    pDescD3D11->RenderTargetWriteMask = 0;
+    if (pDescKGFX->colorWriteMask & KGFX_COLOR_MASK_FLAG_RED) {
+        pDescD3D11->RenderTargetWriteMask |= D3D11_COLOR_WRITE_ENABLE_RED;
+    }
+
+    if (pDescKGFX->colorWriteMask & KGFX_COLOR_MASK_FLAG_GREEN) {
+        pDescD3D11->RenderTargetWriteMask |= D3D11_COLOR_WRITE_ENABLE_GREEN;
+    }
+
+    if (pDescKGFX->colorWriteMask & KGFX_COLOR_MASK_FLAG_BLUE) {
+        pDescD3D11->RenderTargetWriteMask |= D3D11_COLOR_WRITE_ENABLE_BLUE;
+    }
+
+    if (pDescKGFX->colorWriteMask & KGFX_COLOR_MASK_FLAG_ALPHA) {
+        pDescD3D11->RenderTargetWriteMask |= D3D11_COLOR_WRITE_ENABLE_ALPHA;
+    }
+
+    return KGFX_TRUE;
 }
 
 KGFXResult kgfxCreateInstance_d3d11(KGFXInstanceCreateFlagBits flags, KGFXInstance* pInstance) {
@@ -6036,13 +6388,40 @@ KGFXResult kgfxCreateDevice_d3d11(KGFXInstance instance, uint32_t deviceID, KGFX
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0
     };
-    
+
+    KGFXInstance_D3D11_t* d3d11Instance = (KGFXInstance_D3D11_t*) instance;
+
+    UINT flags = 0;
+    if (d3d11Instance->flags & KGFX_INSTANCE_CREATE_FLAG_VALIDATION || d3d11Instance->flags & KGFX_INSTANCE_CREATE_FLAG_DEBUG) {
+        flags |= D3D11_CREATE_DEVICE_DEBUG;
+    }
+
     ID3D11Device* device;
     ID3D11DeviceContext* context;
-    if (D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0, featureLevels, sizeof(featureLevels) / sizeof(D3D_FEATURE_LEVEL), D3D11_SDK_VERSION, &device, NULL, &context) != S_OK) {
+    if (D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, flags, featureLevels, sizeof(featureLevels) / sizeof(D3D_FEATURE_LEVEL), D3D11_SDK_VERSION, &device, NULL, &context) != S_OK) {
         adapter->Release();
         factory->Release();
         return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (d3d11Instance->flags & KGFX_INSTANCE_CREATE_FLAG_VALIDATION || d3d11Instance->flags & KGFX_INSTANCE_CREATE_FLAG_DEBUG) {
+        ID3D11InfoQueue* info;
+        device->QueryInterface(IID_PPV_ARGS(&info));
+        info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+        info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
+        info->Release();
+
+        HMODULE dxgidebug = LoadLibraryA("dxgidebug.dll");
+        if (dxgidebug != NULL) {
+            HRESULT (WINAPI *dxgiGetDebugInterface)(REFIID riid, void** ppDebug);
+            *((FARPROC*) &dxgiGetDebugInterface) = GetProcAddress(dxgidebug, "DXGIGetDebugInterface");
+
+            IDXGIInfoQueue* dxgiinfo;
+            dxgiGetDebugInterface(IID_PPV_ARGS(&dxgiinfo));
+            dxgiinfo->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+            dxgiinfo->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
+            dxgiinfo->Release();
+        }
     }
     
     KGFXDevice_D3D11_t* d3d11Device = new KGFXDevice_D3D11_t{};
@@ -6255,26 +6634,134 @@ void kgfxDestroyTexture_d3d11(KGFXTexture texture) {
 }
 
 KGFXResult kgfxUploadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXTexture_D3D11_t* d3d11Texture = (KGFXTexture_D3D11_t*) texture;
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) d3d11Texture->device;
+
+    D3D11_BOX box;
+    box.left = pTransferDesc->textureX;
+    box.top = pTransferDesc->textureY;
+    box.front = pTransferDesc->textureZ;
+    box.right = pTransferDesc->textureX + pTransferDesc->textureWidth;
+    box.bottom = pTransferDesc->textureY + pTransferDesc->textureHeight;
+    box.back = pTransferDesc->textureZ + pTransferDesc->textureDepth;
+    d3d11Device->d3d11.context->UpdateSubresource(d3d11Texture->d3d11.texture, pTransferDesc->textureFirstLayer, &box, pData, 0, 0);
+    return KGFX_RESULT_SUCCESS;
 }
 
 KGFXResult kgfxDownloadTexture_d3d11(KGFXTexture texture, void* pData, uint64_t size, const KGFXTextureTransferDesc* pTransferDesc) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
-}
+    KGFXTexture_D3D11_t* d3d11Texture = (KGFXTexture_D3D11_t*) texture;
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) d3d11Texture->device;
 
+    D3D11_BOX box;
+    box.left = pTransferDesc->textureX;
+    box.top = pTransferDesc->textureY;
+    box.front = pTransferDesc->textureZ;
+    box.right = pTransferDesc->textureX + pTransferDesc->textureWidth;
+    box.bottom = pTransferDesc->textureY + pTransferDesc->textureHeight;
+    box.back = pTransferDesc->textureZ + pTransferDesc->textureDepth;
+    d3d11Device->d3d11.context->CopySubresourceRegion(d3d11Texture->d3d11.texture, pTransferDesc->textureFirstLayer, pTransferDesc->textureX, pTransferDesc->textureY, pTransferDesc->textureZ, d3d11Texture->d3d11.texture, pTransferDesc->textureFirstLayer, &box);
+    return KGFX_RESULT_SUCCESS;
+}
 
 KGFXResult kgfxCreateSampler_d3d11(KGFXDevice device, const KGFXSamplerDesc* pSamplerDesc, KGFXSampler* pSampler) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) device;
+    D3D11_SAMPLER_DESC desc;
+    if (!kgfx_d3d11_sampleFilter(pSamplerDesc->magFilter, pSamplerDesc->minFilter, pSamplerDesc->mipMapFilter, &desc.Filter)) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!kgfx_d3d11_textureAddressMode(pSamplerDesc->sampleModeU, &desc.AddressU)) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!kgfx_d3d11_textureAddressMode(pSamplerDesc->sampleModeV, &desc.AddressV)) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!kgfx_d3d11_textureAddressMode(pSamplerDesc->sampleModeW, &desc.AddressW)) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    desc.MipLODBias = 0.0f;
+    desc.MaxAnisotropy = (UINT) pSamplerDesc->anisotropy;
+    desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+    if (!kgfx_d3d11_sampleBorder(pSamplerDesc->border, &desc.BorderColor[0], &desc.BorderColor[1], &desc.BorderColor[2], &desc.BorderColor[3])) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    desc.MinLOD = pSamplerDesc->minLod;
+    desc.MaxLOD = pSamplerDesc->maxLod;
+
+    ID3D11SamplerState* sampler;
+    if (d3d11Device->d3d11.device->CreateSamplerState(&desc, &sampler) != S_OK) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    KGFXSampler_D3D11_t* d3d11Sampler = new KGFXSampler_D3D11_t{};
+    d3d11Sampler->obj.api = KGFX_INSTANCE_API_D3D11;
+    d3d11Sampler->device = device;
+    d3d11Sampler->d3d11.sampler = sampler;
+
+    *pSampler = &d3d11Sampler->obj;
+    return KGFX_RESULT_SUCCESS;
 }
 
-void kgfxDestroySampler_d3d11(KGFXSampler sampler) {}
+void kgfxDestroySampler_d3d11(KGFXSampler sampler) {
+    KGFXSampler_D3D11_t* d3d11Sampler = (KGFXSampler_D3D11_t*) sampler;
+    d3d11Sampler->d3d11.sampler->Release();
+    delete d3d11Sampler;
+}
 
 KGFXResult kgfxCreateShaderSPIRV_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
 KGFXResult kgfxCreateShaderDXBC_d3d11(KGFXDevice device, const void* pData, uint32_t size, const char* entryName, KGFXShaderStage stage, KGFXShader* pShader) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) device;
+    ID3D11DeviceChild* shader = NULL;
+    switch (stage) {
+        case KGFX_SHADER_STAGE_VERTEX:
+            if (d3d11Device->d3d11.device->CreateVertexShader(pData, size, NULL, (ID3D11VertexShader**) &shader) != S_OK) {
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+            break;
+        case KGFX_SHADER_STAGE_FRAGMENT:
+            if (d3d11Device->d3d11.device->CreatePixelShader(pData, size, NULL, (ID3D11PixelShader**) &shader) != S_OK) {
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+            break;
+        case KGFX_SHADER_STAGE_GEOMETRY:
+            if (d3d11Device->d3d11.device->CreateGeometryShader(pData, size, NULL, (ID3D11GeometryShader**) &shader) != S_OK) {
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+            break;
+        case KGFX_SHADER_STAGE_TESS_CONTROL:
+            if (d3d11Device->d3d11.device->CreateHullShader(pData, size, NULL, (ID3D11HullShader**) &shader) != S_OK) {
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+            break;
+        case KGFX_SHADER_STAGE_TESS_EVAL:
+            if (d3d11Device->d3d11.device->CreateDomainShader(pData, size, NULL, (ID3D11DomainShader**) &shader) != S_OK) {
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+            break;
+        case KGFX_SHADER_STAGE_COMPUTE:
+            if (d3d11Device->d3d11.device->CreateComputeShader(pData, size, NULL, (ID3D11ComputeShader**) &shader) != S_OK) {
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+            break;
+        default:
+            return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    KGFXShader_D3D11_t* d3d11Shader = new KGFXShader_D3D11_t{};
+    d3d11Shader->obj.api = KGFX_INSTANCE_API_D3D11;
+    d3d11Shader->device = device;
+    d3d11Shader->stage = stage;
+    d3d11Shader->d3d11.shader = shader;
+
+    *pShader = &d3d11Shader->obj;
+    return KGFX_RESULT_SUCCESS;
 }
 
 KGFXResult kgfxCreateShaderGLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t glslVersion, KGFXShader* pShader) {
@@ -6282,16 +6769,244 @@ KGFXResult kgfxCreateShaderGLSL_d3d11(KGFXDevice device, const char* source, uin
 }
 
 KGFXResult kgfxCreateShaderHLSL_d3d11(KGFXDevice device, const char* source, uint32_t length, const char* entryName, KGFXShaderStage stage, uint32_t shaderModelMajor, uint32_t shaderModelMinor, uint32_t macroDefineCount, const KGFXMacroDefineHLSL* pMacroDefines, KGFXShader* pShader) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) device;
+
+    char shaderModel[16];
+    char stageChar;
+    if (stage == KGFX_SHADER_STAGE_VERTEX) {
+        stageChar = 'v';
+    } else if (stage == KGFX_SHADER_STAGE_FRAGMENT) {
+        stageChar = 'p';
+    } else if (stage == KGFX_SHADER_STAGE_GEOMETRY) {
+        stageChar = 'g';
+    } else if (stage == KGFX_SHADER_STAGE_TESS_CONTROL) {
+        stageChar = 'h';
+    } else if (stage == KGFX_SHADER_STAGE_TESS_EVAL) {
+        stageChar = 'd';
+    } else if (stage == KGFX_SHADER_STAGE_COMPUTE) {
+        stageChar = 'c';
+    } else {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    snprintf(shaderModel, sizeof(shaderModel), "%cs_%u_%u", stageChar, shaderModelMajor, shaderModelMinor);
+
+    D3D_SHADER_MACRO* pMacros = NULL;
+    if (macroDefineCount != 0) {
+        new D3D_SHADER_MACRO[macroDefineCount + 1];
+        for (uint32_t i = 0; i < macroDefineCount; i++) {
+            pMacros[i].Name = pMacroDefines[i].macroName;
+            pMacros[i].Definition = pMacroDefines[i].value;
+        }
+
+        pMacros[macroDefineCount].Name = NULL;
+        pMacros[macroDefineCount].Definition = NULL;
+    }
+
+    ID3DBlob* blob;
+    ID3DBlob* error;
+    if (D3DCompile(source, length, NULL, pMacros, NULL, entryName, shaderModel, 0, 0, &blob, &error) != S_OK) {
+        if (error != NULL) {
+            char* message = new char[error->GetBufferSize() + 1];
+            memcpy(message, error->GetBufferPointer(), error->GetBufferSize());
+            message[error->GetBufferSize()] = '\0';
+
+            KGFXInstance_D3D11_t* d3d11Instance = (KGFXInstance_D3D11_t*) d3d11Device->obj.instance;
+            d3d11Instance->debugCallback(d3d11Device->obj.instance, KGFX_DEBUG_SEVERITY_ERROR, KGFX_DEBUG_SOURCE_UNDERLYING_API, message);
+            delete[] message;
+            error->Release();
+        }
+
+        if (pMacros != NULL) {
+            delete[] pMacros;
+        }
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    if (pMacros != NULL) {
+        delete[] pMacros;
+    }
+
+    KGFXResult result = kgfxCreateShaderDXBC_d3d11(device, blob->GetBufferPointer(), (uint32_t) blob->GetBufferSize(), entryName, stage, pShader);
+    if (stage != KGFX_SHADER_STAGE_VERTEX) {
+        blob->Release();
+    } else {
+        KGFXShader_D3D11_t* d3d11Shader = (KGFXShader_D3D11_t*) *pShader;
+        d3d11Shader->d3d11.vblob = blob;
+    }
+
+    return result;
 }
 
-void kgfxDestroyShader_d3d11(KGFXShader shader) {}
+void kgfxDestroyShader_d3d11(KGFXShader shader) {
+    KGFXShader_D3D11_t* d3d11Shader = (KGFXShader_D3D11_t*) shader;
+    if (d3d11Shader->stage == KGFX_SHADER_STAGE_VERTEX) {
+        d3d11Shader->d3d11.vblob->Release();
+    }
+
+    d3d11Shader->d3d11.shader->Release();
+    delete d3d11Shader;
+}
 
 KGFXResult kgfxCreateGraphicsPipeline_d3d11(KGFXDevice device, const KGFXGraphicsPipelineDesc* pPipelineDesc, KGFXGraphicsPipeline* pPipeline) {
-    return KGFX_RESULT_ERROR_UNIMPLEMENTED;
+    KGFXDevice_D3D11_t* d3d11Device = (KGFXDevice_D3D11_t*) device;
+    if (pPipelineDesc->renderTargetCount > 8) {
+        return KGFX_RESULT_ERROR_UNSUPPORTED;
+    }
+
+    std::vector<D3D11_INPUT_ELEMENT_DESC> inputElementDescs(pPipelineDesc->vertexInputDesc.attributeCount);
+    const char* defaultSemanticName = "INPUT";
+    for (uint32_t i = 0; i < pPipelineDesc->vertexInputDesc.attributeCount; i++) {
+        if (pPipelineDesc->vertexInputDesc.pAttributes[i].semanticName == NULL) {
+            inputElementDescs[i].SemanticName = defaultSemanticName;
+            inputElementDescs[i].SemanticIndex = pPipelineDesc->vertexInputDesc.pAttributes[i].location;
+        } else {
+            inputElementDescs[i].SemanticName = pPipelineDesc->vertexInputDesc.pAttributes[i].semanticName;
+            inputElementDescs[i].SemanticIndex = pPipelineDesc->vertexInputDesc.pAttributes[i].semanticIndex;
+        }
+
+        if (!kgfx_d3d11_dxgiFormat(pPipelineDesc->vertexInputDesc.pAttributes[i].format, &inputElementDescs[i].Format)) {
+            return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+        }
+
+        inputElementDescs[i].InputSlot = pPipelineDesc->vertexInputDesc.pAttributes[i].binding;
+        inputElementDescs[i].AlignedByteOffset = pPipelineDesc->vertexInputDesc.pAttributes[i].offset;
+        inputElementDescs[i].InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+        if (!kgfx_d3d11_inputClass(pPipelineDesc->vertexInputDesc.pBindings[pPipelineDesc->vertexInputDesc.pAttributes[i].binding].inputRate, &inputElementDescs[i].InputSlotClass)) {
+            return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+        }
+
+        inputElementDescs[i].InstanceDataStepRate = 0;
+    }
+
+    ID3DBlob* vertexBlob = NULL;
+    for (uint32_t i = 0; i < pPipelineDesc->shaderCount; i++) {
+        KGFXShader_D3D11_t* d3d11Shader = (KGFXShader_D3D11_t*) pPipelineDesc->pShaders[i];
+        if (d3d11Shader->stage == KGFX_SHADER_STAGE_VERTEX) {
+            vertexBlob = d3d11Shader->d3d11.vblob;
+            break;
+        }
+    }
+
+    if (vertexBlob == NULL) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    ID3D11InputLayout* inputLayout;
+    if (d3d11Device->d3d11.device->CreateInputLayout(inputElementDescs.data(), (UINT) inputElementDescs.size(), vertexBlob->GetBufferPointer(), vertexBlob->GetBufferSize(), &inputLayout) != S_OK) {
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    D3D11_RASTERIZER_DESC rasterizerDesc;
+    if (!kgfx_d3d11_fillMode(pPipelineDesc->fillMode, &rasterizerDesc.FillMode)) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!kgfx_d3d11_cullMode(pPipelineDesc->cullMode, &rasterizerDesc.CullMode)) {
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    rasterizerDesc.FrontCounterClockwise = !!pPipelineDesc->counterClockwiseFrontFaceWinding;
+    rasterizerDesc.DepthBias = 0;
+    rasterizerDesc.DepthBiasClamp = 0.0f;
+    rasterizerDesc.SlopeScaledDepthBias = 0.0f;
+    rasterizerDesc.DepthClipEnable = TRUE;
+    rasterizerDesc.ScissorEnable = TRUE;
+    rasterizerDesc.MultisampleEnable = FALSE;
+    rasterizerDesc.AntialiasedLineEnable = FALSE;
+
+    ID3D11RasterizerState* rasterizerState;
+    if (d3d11Device->d3d11.device->CreateRasterizerState(&rasterizerDesc, &rasterizerState) != S_OK) {
+        inputLayout->Release();
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    D3D11_DEPTH_STENCIL_DESC depthStencilDesc;
+    depthStencilDesc.DepthEnable = !!pPipelineDesc->depthStencilDesc.testDepth;
+    depthStencilDesc.DepthWriteMask = pPipelineDesc->depthStencilDesc.writeStencil ? D3D11_DEPTH_WRITE_MASK_ALL : D3D11_DEPTH_WRITE_MASK_ZERO;
+    if (!kgfx_d3d11_comparisonFunc(pPipelineDesc->depthStencilDesc.compareOp, &depthStencilDesc.DepthFunc)) {
+        inputLayout->Release();
+        rasterizerState->Release();
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    depthStencilDesc.StencilEnable = FALSE;
+    depthStencilDesc.StencilReadMask = pPipelineDesc->depthStencilDesc.readMaskStencil;
+    depthStencilDesc.StencilWriteMask = pPipelineDesc->depthStencilDesc.writeMaskStencil;
+    if (!kgfx_d3d11_stencilOpDesc(&pPipelineDesc->depthStencilDesc.frontStencilOpDesc, &depthStencilDesc.FrontFace)) {
+        inputLayout->Release();
+        rasterizerState->Release();
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    if (!kgfx_d3d11_stencilOpDesc(&pPipelineDesc->depthStencilDesc.backStencilOpDesc, &depthStencilDesc.BackFace)) {
+        inputLayout->Release();
+        rasterizerState->Release();
+        return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+    }
+
+    ID3D11DepthStencilState* depthStencilState;
+    if (d3d11Device->d3d11.device->CreateDepthStencilState(&depthStencilDesc, &depthStencilState) != S_OK) {
+        inputLayout->Release();
+        rasterizerState->Release();
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    D3D11_BLEND_DESC blendDesc;
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
+    for (uint32_t i = 0; i < pPipelineDesc->renderTargetCount; ++i) {
+        if (!kgfx_d3d11_rtBlendDesc(&pPipelineDesc->pRenderTargetDescs[i], &blendDesc.RenderTarget[i])) {
+            inputLayout->Release();
+            rasterizerState->Release();
+            depthStencilState->Release();
+            return KGFX_RESULT_ERROR_INVALID_ARGUMENT;
+        }
+    }
+
+    ID3D11BlendState* blendState;
+    if (d3d11Device->d3d11.device->CreateBlendState(&blendDesc, &blendState) != S_OK) {
+        inputLayout->Release();
+        rasterizerState->Release();
+        depthStencilState->Release();
+        return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+    }
+
+    KGFXGraphicsPipeline_D3D11_t* d3d11Pipeline = new KGFXGraphicsPipeline_D3D11_t{};
+    d3d11Pipeline->obj.api = KGFX_INSTANCE_API_D3D11;
+    d3d11Pipeline->device = device;
+    d3d11Pipeline->d3d11.inputLayout = inputLayout;
+    d3d11Pipeline->d3d11.rasterizerState = rasterizerState;
+    d3d11Pipeline->d3d11.depthStencilState = depthStencilState;
+    d3d11Pipeline->d3d11.blendState = blendState;
+
+    for (uint32_t i = 0; i < pPipelineDesc->shaderCount; ++i) {
+        KGFXShader_D3D11_t* d3d11Shader = (KGFXShader_D3D11_t*) pPipelineDesc->pShaders[i];
+        if (d3d11Shader->stage == KGFX_SHADER_STAGE_VERTEX) {
+            d3d11Pipeline->d3d11.shaders.vertexShader = (ID3D11VertexShader*) d3d11Shader->d3d11.shader;
+        } else if (d3d11Shader->stage == KGFX_SHADER_STAGE_FRAGMENT) {
+            d3d11Pipeline->d3d11.shaders.pixelShader = (ID3D11PixelShader*) d3d11Shader->d3d11.shader;
+        } else if (d3d11Shader->stage == KGFX_SHADER_STAGE_GEOMETRY) {
+            d3d11Pipeline->d3d11.shaders.geometryShader = (ID3D11GeometryShader*) d3d11Shader->d3d11.shader;
+        } else if (d3d11Shader->stage == KGFX_SHADER_STAGE_TESS_CONTROL) {
+            d3d11Pipeline->d3d11.shaders.hullShader = (ID3D11HullShader*) d3d11Shader->d3d11.shader;
+        } else if (d3d11Shader->stage == KGFX_SHADER_STAGE_TESS_EVAL) {
+            d3d11Pipeline->d3d11.shaders.domainShader = (ID3D11DomainShader*) d3d11Shader->d3d11.shader;
+        }
+    }
+
+    *pPipeline = &d3d11Pipeline->obj;
+    return KGFX_RESULT_SUCCESS;
 }
 
-void kgfxDestroyGraphicsPipeline_d3d11(KGFXGraphicsPipeline pipeline) {}
+void kgfxDestroyGraphicsPipeline_d3d11(KGFXGraphicsPipeline pipeline) {
+    KGFXGraphicsPipeline_D3D11_t* d3d11Pipeline = (KGFXGraphicsPipeline_D3D11_t*) pipeline;
+    d3d11Pipeline->d3d11.inputLayout->Release();
+    d3d11Pipeline->d3d11.rasterizerState->Release();
+    d3d11Pipeline->d3d11.depthStencilState->Release();
+    d3d11Pipeline->d3d11.blendState->Release();
+    delete d3d11Pipeline;
+}
 
 KGFXResult kgfxCreateCommandPool_d3d11(KGFXDevice device, uint32_t maxCommandLists, KGFXQueueType queueType, KGFXCommandPool* pCommandPool) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
