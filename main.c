@@ -42,6 +42,7 @@ typedef struct TestKGFXState {
     
     const char* apiString;
     uint32_t width, height;
+    uint32_t oldWidth, oldHeight;
     uint32_t triangleCount;
     UniformData* pUniformData;
     KGFXTexture backbuffer;
@@ -287,7 +288,50 @@ KGFXResult createShaders(TestKGFXState* pState) {
     return result;
 }
 
+void testResizeCallback(GLFWwindow* window, int width, int height) {
+    TestKGFXState* pState = (TestKGFXState*) glfwGetWindowUserPointer(window);
+    pState->width = width;
+    pState->height = height;
+
+    if (pState->width != pState->oldWidth || pState->height != pState->oldHeight) {
+        pState->oldWidth = pState->width;
+        pState->oldHeight = pState->height;
+
+        if (kgfxResizeGraphicsPipelineRenderTargets(pState->graphicsPipeline, pState->width, pState->height) != KGFX_RESULT_SUCCESS) {
+            printf("Failed to resize graphics pipeline render targets on %s\n", pState->apiString);
+        }
+
+        KGFXTextureDesc textureDesc;
+        textureDesc.dimensionType = KGFX_DIMENSION_TYPE_2D;
+        textureDesc.width = pState->width;
+        textureDesc.height = pState->height;
+        textureDesc.depth = 1;
+        textureDesc.layers = 1;
+        textureDesc.mipMapLevels = 1;
+        textureDesc.format = KGFX_FORMAT_D32_FLOAT;
+        textureDesc.usage = KGFX_TEXTURE_USAGE_DEPTH_STENCIL_TARGET;
+        textureDesc.location = KGFX_RESOURCE_LOCATION_DEVICE;
+
+        KGFXTexture depthTexture;
+        KGFXResult result = kgfxCreateTexture(pState->device, &textureDesc, &depthTexture);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to recreate depth texture on %s\n", pState->apiString);
+            destroyTestState(pState);
+            return result;
+        }
+
+        kgfxDestroyTexture(pState->depthTexture);
+        pState->depthTexture = depthTexture;
+
+        kgfxRecreateSwapchain(pState->swapchain, pState->width, pState->height);
+        testLoop(pState);
+    }
+}
+
 KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI api) {
+    glfwSetWindowUserPointer(window, pState);
+    glfwSetWindowSizeCallback(window, testResizeCallback);
+
     pState->isValid = KGFX_TRUE;
     pState->apiString = getApiString(api);
     
@@ -373,7 +417,7 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
     swapchainDesc.height = pState->height;
     swapchainDesc.format = KGFX_FORMAT_B8G8R8A8_SRGB;
     swapchainDesc.imageCount = 2;
-    swapchainDesc.presentMode = KGFX_PRESENT_MODE_VSYNC;
+    swapchainDesc.presentMode = KGFX_PRESENT_MODE_IMMEDIATE_VK_MTL;
     
 #ifdef KGFX_WIN32
     result = kgfxCreateSwapchainWin32(pState->device, glfwGetWin32Window(window), GetModuleHandle(NULL), &swapchainDesc, &pState->swapchain);
@@ -463,7 +507,7 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
     pipelineDesc.renderTargetCount = sizeof(renderTargetDescs) / sizeof(renderTargetDescs[0]);
     pipelineDesc.pRenderTargetDescs = renderTargetDescs;
     
-    pipelineDesc.depthStencilDesc.format = KGFX_FORMAT_D32_FLOAT;
+    pipelineDesc.depthStencilDesc.format = KGFX_FORMAT_UNKNOWN; // KGFX_FORMAT_D32_FLOAT;
     pipelineDesc.depthStencilDesc.width = pState->width;
     pipelineDesc.depthStencilDesc.height = pState->height;
     pipelineDesc.depthStencilDesc.layers = 1;
@@ -655,12 +699,49 @@ KGFXResult testLoop(TestKGFXState* pState) {
     if (!pState->isValid) {
         return KGFX_RESULT_ERROR_UNKNOWN;
     }
+
+    if (pState->width == 0 || pState->height == 0) {
+        return KGFX_RESULT_SUCCESS;
+    }
+
+    if (pState->width != pState->oldWidth || pState->height != pState->oldHeight) {
+        pState->oldWidth = pState->width;
+        pState->oldHeight = pState->height;
+
+        if (kgfxResizeGraphicsPipelineRenderTargets(pState->graphicsPipeline, pState->width, pState->height) != KGFX_RESULT_SUCCESS) {
+            printf("Failed to resize graphics pipeline render targets on %s\n", pState->apiString);
+        }
+
+        KGFXTextureDesc textureDesc;
+        textureDesc.dimensionType = KGFX_DIMENSION_TYPE_2D;
+        textureDesc.width = pState->width;
+        textureDesc.height = pState->height;
+        textureDesc.depth = 1;
+        textureDesc.layers = 1;
+        textureDesc.mipMapLevels = 1;
+        textureDesc.format = KGFX_FORMAT_D32_FLOAT;
+        textureDesc.usage = KGFX_TEXTURE_USAGE_DEPTH_STENCIL_TARGET;
+        textureDesc.location = KGFX_RESOURCE_LOCATION_DEVICE;
+
+        KGFXTexture depthTexture;
+        KGFXResult result = kgfxCreateTexture(pState->device, &textureDesc, &depthTexture);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to recreate depth texture on %s\n", pState->apiString);
+            destroyTestState(pState);
+            return result;
+        }
+
+        kgfxDestroyTexture(pState->depthTexture);
+        pState->depthTexture = depthTexture;
+
+        kgfxRecreateSwapchain(pState->swapchain, pState->width, pState->height);
+    }
     
     mat4x4_identity(pState->pUniformData->mvp);
     mat4x4_rotate_Z(pState->pUniformData->mvp, pState->pUniformData->mvp, glfwGetTime());
     
     mat4x4 proj;
-    mat4x4_perspective(proj, 60, 4.0f / 3.0f, 0.0f, 100.0f);
+    mat4x4_perspective(proj, 60, pState->width / (float) pState->height, 0.0f, 100.0f);
     
     mat4x4_mul(pState->pUniformData->mvp, proj, pState->pUniformData->mvp);
     
@@ -705,7 +786,7 @@ KGFXResult testLoop(TestKGFXState* pState) {
     kgfxCmdSetViewportAndScissor(pState->commandList, 1, &viewport, &scissor);
     
     KGFXTexture renderTargets[1] = { pState->backbuffer };
-    kgfxCmdBindRenderTargets(pState->commandList, sizeof(renderTargets) / sizeof(renderTargets[0]), renderTargets, pState->depthTexture);
+    kgfxCmdBindRenderTargets(pState->commandList, sizeof(renderTargets) / sizeof(renderTargets[0]), renderTargets, NULL);
     
     KGFXClearValue clearValue;
     clearValue.type = KGFX_CLEAR_VALUE_TYPE_F32;
@@ -739,7 +820,6 @@ KGFXResult testLoop(TestKGFXState* pState) {
     result = kgfxPresentSwapchain(pState->swapchain);
     if (result != KGFX_RESULT_SUCCESS) {
         printf("Failed to present swapchain on %s\n", pState->apiString);
-        return result;
     }
 
     return KGFX_RESULT_SUCCESS;
@@ -787,12 +867,21 @@ int main() {
     
     while (totalRunning > 0) {
         glfwPollEvents();
+
+        int w, h;
+        glfwGetFramebufferSize(windows[current], &w, &h);
         
         for (uint32_t i = 0; i < API_COUNT; ++i) {
             if (!states[i].isValid) {
                 continue;
             }
             
+            states[i].oldWidth = states[i].width;
+            states[i].oldHeight = states[i].height;
+
+            states[i].width = w;
+            states[i].height = h;
+
             if (testLoop(&states[i]) != KGFX_RESULT_SUCCESS || glfwWindowShouldClose(windows[i])) {
                 destroyTestState(&states[i]);
                 glfwDestroyWindow(windows[i]);
