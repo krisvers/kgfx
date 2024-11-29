@@ -59,6 +59,7 @@ typedef struct TestKGFXState {
     KGFXBuffer uniformBuffer;
     KGFXTexture logoTexture;
     KGFXTexture depthTexture;
+    KGFXTexture offscreenRenderTarget;
     KGFXSampler nearestSampler;
 } TestKGFXState;
 
@@ -69,6 +70,7 @@ void destroyTestState(TestKGFXState* pState) {
     
     pState->isValid = KGFX_FALSE;
     if (pState->nearestSampler != NULL) { kgfxDestroySampler(pState->nearestSampler); }
+    if (pState->offscreenRenderTarget != NULL) { kgfxDestroyTexture(pState->offscreenRenderTarget); }
     if (pState->depthTexture != NULL) { kgfxDestroyTexture(pState->depthTexture); }
     if (pState->logoTexture != NULL) { kgfxDestroyTexture(pState->logoTexture); }
     if (pState->uniformBuffer != NULL) { kgfxDestroyBuffer(pState->uniformBuffer); }
@@ -321,11 +323,25 @@ void testResizeCallback(GLFWwindow* window, int width, int height) {
         if (result != KGFX_RESULT_SUCCESS) {
             printf("Failed to recreate depth texture on %s\n", pState->apiString);
             destroyTestState(pState);
-            return result;
+            return;
         }
 
         kgfxDestroyTexture(pState->depthTexture);
         pState->depthTexture = depthTexture;
+
+        textureDesc.format = KGFX_FORMAT_B8G8R8A8_SRGB;
+        textureDesc.usage = KGFX_TEXTURE_USAGE_RENDER_TARGET | KGFX_TEXTURE_USAGE_TRANSFER_SRC;
+
+        KGFXTexture offscreenRenderTarget;
+        result = kgfxCreateTexture(pState->device, &textureDesc, &offscreenRenderTarget);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to recreate offscreen render target on %s\n", pState->apiString);
+            destroyTestState(pState);
+            return result;
+        }
+
+        kgfxDestroyTexture(pState->offscreenRenderTarget);
+        pState->offscreenRenderTarget = offscreenRenderTarget;
 
         kgfxRecreateSwapchain(pState->swapchain, pState->width, pState->height);
         testLoop(pState);
@@ -468,7 +484,8 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
     renderTargetDescs[0].colorWriteMask = KGFX_COLOR_MASK_ALL;
     renderTargetDescs[0].loadOp = KGFX_RENDER_TARGET_OP_CLEAR;
     renderTargetDescs[0].storeOp = KGFX_RENDER_TARGET_OP_STORE;
-    renderTargetDescs[0].finalLayout = KGFX_TEXTURE_LAYOUT_PRESENT;
+    renderTargetDescs[0].usage = KGFX_TEXTURE_USAGE_RENDER_TARGET | KGFX_TEXTURE_USAGE_TRANSFER_SRC;
+    renderTargetDescs[0].finalLayout = KGFX_TEXTURE_LAYOUT_TRANSFER_SRC;
     
     KGFXVertexBindingDesc bindingDesc;
     bindingDesc.binding = 0;
@@ -676,6 +693,16 @@ KGFXResult testSetup(TestKGFXState* pState, GLFWwindow* window, KGFXInstanceAPI 
         destroyTestState(pState);
         return result;
     }
+
+    textureDesc.format = KGFX_FORMAT_B8G8R8A8_SRGB;
+    textureDesc.usage = KGFX_TEXTURE_USAGE_RENDER_TARGET | KGFX_TEXTURE_USAGE_TRANSFER_SRC;
+    
+    result = kgfxCreateTexture(pState->device, &textureDesc, &pState->offscreenRenderTarget);
+    if (result != KGFX_RESULT_SUCCESS) {
+        printf("Failed to create offscreen render target on %s\n", pState->apiString);
+        destroyTestState(pState);
+        return result;
+    }
     
     KGFXSamplerDesc samplerDesc;
     samplerDesc.magFilter = KGFX_TEXTURE_FILTER_NEAREST;
@@ -738,6 +765,20 @@ KGFXResult testLoop(TestKGFXState* pState) {
         kgfxDestroyTexture(pState->depthTexture);
         pState->depthTexture = depthTexture;
 
+        textureDesc.format = KGFX_FORMAT_B8G8R8A8_SRGB;
+        textureDesc.usage = KGFX_TEXTURE_USAGE_RENDER_TARGET | KGFX_TEXTURE_USAGE_TRANSFER_SRC;
+
+        KGFXTexture offscreenRenderTarget;
+        result = kgfxCreateTexture(pState->device, &textureDesc, &offscreenRenderTarget);
+        if (result != KGFX_RESULT_SUCCESS) {
+            printf("Failed to recreate offscreen render target on %s\n", pState->apiString);
+            destroyTestState(pState);
+            return result;
+        }
+
+        kgfxDestroyTexture(pState->offscreenRenderTarget);
+        pState->offscreenRenderTarget = offscreenRenderTarget;
+        
         kgfxRecreateSwapchain(pState->swapchain, pState->width, pState->height);
     }
     
@@ -789,7 +830,7 @@ KGFXResult testLoop(TestKGFXState* pState) {
 
     kgfxCmdSetViewportAndScissor(pState->commandList, 1, &viewport, &scissor);
     
-    KGFXTexture renderTargets[1] = { pState->backbuffer };
+    KGFXTexture renderTargets[1] = { pState->offscreenRenderTarget };
     kgfxCmdBindRenderTargets(pState->commandList, sizeof(renderTargets) / sizeof(renderTargets[0]), renderTargets, NULL);
     
     KGFXClearValue clearValue;
@@ -805,10 +846,25 @@ KGFXResult testLoop(TestKGFXState* pState) {
     depthClearValue.value.depthStencil.stencil = 0;
 
     kgfxCmdBeginRendering(pState->commandList, 1, &clearValue, &depthClearValue);
-
     kgfxCmdDraw(pState->commandList, pState->triangleCount, 1, 0, 0);
-
     kgfxCmdEndRendering(pState->commandList);
+
+    KGFXTextureCopyDesc copyDesc;
+    copyDesc.srcX = 0;
+    copyDesc.srcY = 0;
+    copyDesc.srcZ = 0;
+    copyDesc.srcFirstLayer = 0;
+    copyDesc.srcLayerCount = 1;
+    copyDesc.dstX = 0;
+    copyDesc.dstY = 0;
+    copyDesc.dstZ = 0;
+    copyDesc.dstFirstLayer = 0;
+    copyDesc.dstLayerCount = 1;
+    copyDesc.width = pState->width;
+    copyDesc.height = pState->height;
+    copyDesc.depth = 1;
+
+    kgfxCmdCopyTexture(pState->commandList, pState->offscreenRenderTarget, pState->backbuffer, &copyDesc);
     result = kgfxCloseCommandList(pState->commandList);
     if (result != KGFX_RESULT_SUCCESS) {
         printf("Failed to close command list on %s\n", pState->apiString);
