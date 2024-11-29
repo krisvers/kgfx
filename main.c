@@ -293,6 +293,10 @@ void testResizeCallback(GLFWwindow* window, int width, int height) {
     pState->width = width;
     pState->height = height;
 
+    if (width == 0 || height == 0) {
+        return;
+    }
+
     if (pState->width != pState->oldWidth || pState->height != pState->oldHeight) {
         pState->oldWidth = pState->width;
         pState->oldHeight = pState->height;

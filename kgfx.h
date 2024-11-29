@@ -1214,6 +1214,7 @@ typedef struct KGFXSwapchain_Vulkan_t {
     KGFXFormat format;
     KGFXPresentMode presentMode;
     KGFXBool minimized;
+    KGFXBool acquired;
 
     KGFXSwapchainTexture_Vulkan_t backbuffer;
     KGFXSwapchainTexture_Vulkan_t* currentBackbuffer;
@@ -5078,28 +5079,32 @@ void kgfxCmdBeginRendering_vulkan(KGFXCommandList commandList, uint32_t renderTa
             KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
             VkSurfaceKHR vkSurface = vulkanSwapchain->vk.surface;
 
-            VkResult result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, NULL, &vulkanSwapchain->vk.imageIndex);
-            if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-                KGFXSwapchain_Vulkan_t* newSwapchain;
-                if (!kgfx_vulkan_recreateSwapchain(vulkanDevice, vulkanSwapchain, vkSurface, &newSwapchain)) {
+            if (!vulkanSwapchain->acquired) {
+                VkResult result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, NULL, &vulkanSwapchain->vk.imageIndex);
+                if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+                    KGFXSwapchain_Vulkan_t* newSwapchain;
+                    if (!kgfx_vulkan_recreateSwapchain(vulkanDevice, vulkanSwapchain, vkSurface, &newSwapchain)) {
+                        /* TODO: crash out safely */
+                        return;
+                    }
+
+                    vulkanSwapchain = newSwapchain;
+                    if (!newSwapchain->minimized) {
+                        result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, NULL, &vulkanSwapchain->vk.imageIndex);
+                        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+                            /* TODO: crash out safely */
+                            return;
+                        }
+                    }
+                } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
                     /* TODO: crash out safely */
                     return;
                 }
 
-                vulkanSwapchain = newSwapchain;
-                if (!newSwapchain->minimized) {
-                    result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, NULL, &vulkanSwapchain->vk.imageIndex);
-                    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-                        /* TODO: crash out safely */
-                        return;
-                    }
-                }
-            } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-                /* TODO: crash out safely */
-                return;
+                vulkanSwapchain->acquired = KGFX_TRUE;
+                vulkanSwapchain->currentBackbuffer = &vulkanSwapchain->internalBackbuffers.data[vulkanSwapchain->vk.imageIndex];
             }
 
-            vulkanSwapchain->currentBackbuffer = &vulkanSwapchain->internalBackbuffers.data[vulkanSwapchain->vk.imageIndex];
             vulkanTexture = (KGFXTexture_Vulkan_t*) vulkanSwapchainTexture->swapchain->currentBackbuffer;
         }
 
@@ -5392,6 +5397,32 @@ void kgfxCmdDrawIndexedIndirect_vulkan(KGFXCommandList commandList, KGFXBuffer b
 KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
     KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) swapchain;
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
+
+    if (!vulkanSwapchain->acquired) {
+        VkResult result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, NULL, &vulkanSwapchain->vk.imageIndex);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            KGFXSwapchain_Vulkan_t* newSwapchain;
+            if (!kgfx_vulkan_recreateSwapchain(vulkanDevice, vulkanSwapchain, vulkanSwapchain->vk.surface, &newSwapchain)) {
+                /* TODO: crash out safely */
+                return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+            }
+
+            vulkanSwapchain = newSwapchain;
+            if (!newSwapchain->minimized) {
+                result = vkAcquireNextImageKHR(vulkanDevice->vk.device, vulkanSwapchain->vk.swapchain, UINT64_MAX, vulkanSwapchain->vk.imageAvailableSemaphore, NULL, &vulkanSwapchain->vk.imageIndex);
+                if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+                    /* TODO: crash out safely */
+                    return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+                }
+            }
+        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            /* TODO: crash out safely */
+            return KGFX_RESULT_ERROR_TEMPORARY_ERROR;
+        }
+
+        vulkanSwapchain->currentBackbuffer = &vulkanSwapchain->internalBackbuffers.data[vulkanSwapchain->vk.imageIndex];
+        kgfx_vulkan_transitionTexture(NULL, &vulkanSwapchain->currentBackbuffer->base, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    }
     
     VkPresentInfoKHR presentInfo;
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -5404,6 +5435,8 @@ KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
     presentInfo.pResults = NULL;
     
     VkResult result = vkQueuePresentKHR(vulkanDevice->vk.genericQueue, &presentInfo);
+    vulkanSwapchain->acquired = KGFX_FALSE;
+
     vkQueueWaitIdle(vulkanDevice->vk.genericQueue);
     if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
         KGFXSwapchain_Vulkan_t* newSwapchain;
@@ -5423,8 +5456,6 @@ KGFXResult kgfxPresentSwapchain_vulkan(KGFXSwapchain swapchain) {
         presentInfo.pImageIndices = &vulkanSwapchain->vk.imageIndex;
 
         vulkanSwapchain->currentBackbuffer = &vulkanSwapchain->internalBackbuffers.data[vulkanSwapchain->vk.imageIndex];
-
-        /* texture barrier */
         kgfx_vulkan_transitionTexture(NULL, &vulkanSwapchain->currentBackbuffer->base, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_ACCESS_MEMORY_READ_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
         result = vkQueuePresentKHR(vulkanDevice->vk.genericQueue, &presentInfo);
         vkQueueWaitIdle(vulkanDevice->vk.genericQueue);
@@ -5880,6 +5911,11 @@ KGFXResult kgfxCreateSwapchainCocoa_vulkan(KGFXDevice device, void* nsWindow, co
 
 KGFXResult kgfxRecreateSwapchain_vulkan(KGFXSwapchain swapchain, uint32_t width, uint32_t height) {
     KGFXSwapchain_Vulkan_t* vulkanSwapchain = (KGFXSwapchain_Vulkan_t*) swapchain;
+    if (width == 0 || height == 0) {
+        vulkanSwapchain->minimized = KGFX_TRUE;
+        return KGFX_RESULT_SUCCESS;
+    }
+
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanSwapchain->device;
     KGFX_Vulkan_Surface_t* surface = NULL;
     uint32_t surfaceIndex = 0;
