@@ -518,7 +518,7 @@ typedef struct KGFXRenderTargetDesc {
     KGFXRenderTargetOp storeOp;
     KGFXRenderTargetOp stencilLoadOp;
     KGFXRenderTargetOp stencilStoreOp;
-    KGFXTextureUsage usage;
+    KGFXTextureUsageMask usage;
     KGFXTextureLayout finalLayout;
 } KGFXRenderTargetDesc;
 
