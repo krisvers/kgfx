@@ -1055,6 +1055,8 @@ void kgfxDestroyShader_metal(KGFXShader shader);
 KGFXResult kgfxCreateGraphicsPipeline_metal(KGFXDevice device, const KGFXGraphicsPipelineDesc* pPipelineDesc, KGFXGraphicsPipeline* pPipeline);
 void kgfxDestroyGraphicsPipeline_metal(KGFXGraphicsPipeline pipeline);
 
+KGFXResult kgfxResizeGraphicsPipelineRenderTargets_metal(KGFXGraphicsPipeline pipeline, uint32_t width, uint32_t height);
+
 KGFXResult kgfxCreateCommandPool_metal(KGFXDevice device, uint32_t maxCommandLists, KGFXQueueType queueType, KGFXCommandPool* pCommandPool);
 void kgfxDestroyCommandPool_metal(KGFXCommandPool commandPool);
 
@@ -4943,6 +4945,8 @@ void kgfxResetCommandList_vulkan(KGFXCommandList commandList) {
     KGFXCommandList_Vulkan_t* vulkanCommandList = (KGFXCommandList_Vulkan_t*) commandList;
     KGFXCommandPool_Vulkan_t* vulkanCommandPool = (KGFXCommandPool_Vulkan_t*) vulkanCommandList->commandPool;
     KGFXDevice_Vulkan_t* vulkanDevice = (KGFXDevice_Vulkan_t*) vulkanCommandPool->device;
+    vkWaitForFences(vulkanDevice->vk.device, 1, &vulkanCommandList->vk.inUseFence, VK_TRUE, UINT64_MAX);
+    
     vkResetCommandBuffer(vulkanCommandList->vk.commandBuffer, 0);
     memset(&vulkanCommandList->bound, 0, sizeof(vulkanCommandList->bound));
 }
@@ -8140,7 +8144,7 @@ KGFXResult kgfxCreateGraphicsPipeline_metal(KGFXDevice device, const KGFXGraphic
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 
-KGFXResult kgfxResizeGraphicsPipelineRenderTargets_d3d12(KGFXGraphicsPipeline pipeline, uint32_t width, uint32_t height) {
+KGFXResult kgfxResizeGraphicsPipelineRenderTargets_metal(KGFXGraphicsPipeline pipeline, uint32_t width, uint32_t height) {
     return KGFX_RESULT_ERROR_UNIMPLEMENTED;
 }
 

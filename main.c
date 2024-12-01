@@ -63,6 +63,8 @@ typedef struct TestKGFXState {
     KGFXSampler nearestSampler;
 } TestKGFXState;
 
+KGFXResult testLoop(TestKGFXState* pState);
+
 void destroyTestState(TestKGFXState* pState) {
     if (!pState->isValid) {
         return;
